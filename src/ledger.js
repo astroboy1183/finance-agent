@@ -87,6 +87,14 @@ export async function topMerchants(db, { from, to, direction = 'debit', limit = 
   return r.results || [];
 }
 
+export async function biggestDebit(db, { from, to }) {
+  return await db.prepare(
+    `SELECT amount, counterparty, day_ist, category FROM transactions
+     WHERE ts>=? AND ts<? AND direction='debit' AND currency='INR'
+     ORDER BY amount DESC LIMIT 1`,
+  ).bind(from, to).first();
+}
+
 export async function dailyTotals(db, { from, to, direction = 'debit' }) {
   const r = await db.prepare(
     `SELECT day_ist, SUM(amount) s FROM transactions

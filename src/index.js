@@ -6,9 +6,10 @@ import { handleSlackEvent } from './chat.js';
 import { verifySlack } from './slack.js';
 import { renderDashboard, renderLogin } from './dashboard.js';
 import {
-  sumAmount, byCategory, topMerchants, listTxns, dailyTotals, listSubscriptions, getMeta, alertOnce,
+  sumAmount, byCategory, topMerchants, listTxns, dailyTotals, listSubscriptions,
+  getMeta, alertOnce, biggestDebit,
 } from './ledger.js';
-import { thisMonth, lastDays, istDay, nowEpoch } from './timeutil.js';
+import { thisMonth, prevMonth, lastDays, istDay, nowEpoch, daysInMonthSoFar } from './timeutil.js';
 
 const WINDOWS = [7, 10, 20, 30, 100];
 
@@ -33,21 +34,28 @@ async function buildDashboardData(env) {
     windows.push({ days, total: sum, count });
   }
   const mtd = thisMonth(now);
-  const spent = (await sumAmount(db, { from: mtd.from, to: mtd.to, direction: 'debit' })).sum;
+  const spentAgg = await sumAmount(db, { from: mtd.from, to: mtd.to, direction: 'debit' });
   const income = (await sumAmount(db, { from: mtd.from, to: mtd.to, direction: 'credit' })).sum;
-  const net = income - spent;
+  const spent = spentAgg.sum, net = income - spent;
   const rate = income > 0 ? Math.round((net / income) * 100) : null;
-  const r30 = lastDays(30, now);
+  const pm = prevMonth(now);
+  const prevSpent = (await sumAmount(db, { from: pm.from, to: pm.to, direction: 'debit' })).sum;
+  const r30 = lastDays(30, now), r91 = lastDays(91, now);
   return {
+    now,
     generatedIst: istDay(now),
     windows,
-    month: { label: mtd.label, spent, income, net, rate },
+    month: {
+      label: mtd.label, spent, income, net, rate,
+      count: spentAgg.count, prevSpent, daysSoFar: daysInMonthSoFar(now),
+    },
+    biggest: await biggestDebit(db, { from: mtd.from, to: mtd.to }),
     categories: (await byCategory(db, { from: r30.from, to: r30.to, direction: 'debit' })).filter((c) => c.category !== 'income'),
-    top: await topMerchants(db, { from: r30.from, to: r30.to, limit: 8 }),
-    recent: await listTxns(db, { from: lastDays(100, now).from, to: now + 1, limit: 12 }),
-    daily: await dailyTotals(db, { from: r30.from, to: r30.to, direction: 'debit' }),
+    top: await topMerchants(db, { from: r30.from, to: r30.to, limit: 7 }),
+    recent: await listTxns(db, { from: lastDays(100, now).from, to: now + 1, limit: 10 }),
+    dailyDebit: await dailyTotals(db, { from: r91.from, to: now + 1, direction: 'debit' }),
     subs: await listSubscriptions(db),
-    income: await listTxns(db, { from: lastDays(60, now).from, to: now + 1, direction: 'credit', limit: 8 }),
+    income_list: await listTxns(db, { from: lastDays(60, now).from, to: now + 1, direction: 'credit', limit: 6 }),
   };
 }
 
