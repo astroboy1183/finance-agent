@@ -63,17 +63,25 @@ eq(categorize(t4), 'income', 'g4 category');
 // --- g5: statement → not a transaction ---
 eq(parseAlert(S[4]), null, 'g5 statement ignored');
 
-// --- g6: USD card autopay activation → NOT a ledger txn, IS a sub signal ---
-eq(parseAlert(S[5]), null, 'g6 USD autopay excluded from ledger');
+// --- g6: USD card AutoPay with a real Transaction Amount → a charge (spend) ---
+eq(parseAlert(S[5]), null, 'g6 USD autopay not an A/c txn');
 const c6 = parseCardAutopay(S[5]);
 eq(c6.currency, 'USD', 'g6 autopay currency');
+eq(c6.amount, 118, 'g6 autopay amount');
 eq(c6.merchant, 'Anthropic', 'g6 autopay merchant');
+eq(c6.charge, true, 'g6 USD autopay with amount>0 is a real charge');
 
-// --- g7: INR card autopay → NOT a ledger txn (avoids double-count), sub signal ---
-eq(parseAlert(S[6]), null, 'g7 INR card autopay excluded from ledger');
+// --- g8: $0 setup pre-auth → NOT a charge (no money moved) ---
+const c8 = parseCardAutopay({ gmailId: 'g8', subject: 'AutoPay for Foo: ACTIVATED',
+  body: "Here's the summary of your successful AutoPay transaction: Transaction Amount: USD 0.00 Merchant Name: Foo AutoPay ID: ZZ Max Limit: USD 20.00" });
+eq(c8.charge, false, 'g8 $0 pre-auth is not a charge');
+
+// --- g7: INR card autopay PROCESSED → a real charge (counts as CARD spend) ---
+eq(parseAlert(S[6]), null, 'g7 card autopay not an A/c txn');
 const c7 = parseCardAutopay(S[6]);
 eq(c7.amount, 393.53, 'g7 autopay amount');
 eq(c7.merchant, 'RAILWAY', 'g7 autopay merchant');
+eq(c7.charge, true, 'g7 processed autopay is a charge');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

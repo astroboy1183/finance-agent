@@ -49,3 +49,12 @@ export function inr(n) {
 export function daysInMonthSoFar(now = nowEpoch()) {
   return Number(istDay(now).split('-')[2]);
 }
+
+// Rough USD→INR for DISPLAY of foreign subscriptions only. Real spend always
+// uses the exact INR from the bank's charge alert — never this.
+export const USD_INR = 87.5;
+export function subAmount(currency, amount) {
+  if (!currency || currency === 'INR') return inr(amount);
+  if (currency === 'USD') return `USD ${amount} (~${inr(amount * USD_INR)})`;
+  return `${currency} ${amount}`;
+}

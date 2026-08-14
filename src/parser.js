@@ -118,20 +118,32 @@ export function parseAlert(msg) {
   };
 }
 
-// Card AutoPay emails (INR "Auto Pay of INR X for MERCHANT" and USD
-// "Transaction Amount: USD X Merchant Name: ...") are deliberately NOT ledger
-// transactions — the card bill is later settled from the A/c as one debit, so
-// counting them would double-count, and USD would mix currencies. Instead we
-// surface them to the subscription radar.
+const clean = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+
+// Card AutoPay emails. Two shapes matter:
+//   1. "Auto Pay of INR X for MERCHANT has been processed on your ... Card" —
+//      an ACTUAL charge with the exact rupee amount. `charge: true`. The ingester
+//      records these as CARD debits (there's no separate card-bill debit in this
+//      account's alerts, so no double-count).
+//   2. "successful AutoPay transaction: Transaction Amount: USD/INR X Merchant
+//      Name: NAME AutoPay ID: …" — the AutoPay summary. When the subject says
+//      ACTIVATED it's just the mandate/limit being set (no money moved yet);
+//      a USD amount can't be counted in ₹ spend regardless. Tracked as a
+//      subscription only.
+// "Upcoming / to be debited" notices don't match either and are ignored.
 export function parseCardAutopay(msg) {
-  const body = (msg.body || '').replace(/\s+/g, ' ').trim();
+  const body = clean(msg.body);
   const subject = msg.subject || '';
   let m;
-  if ((m = body.match(new RegExp(`Auto ?Pay of INR\\s*${AMT}\\s*for\\s*(.+?)\\s*has been processed`, 'i'))))
-    return { currency: 'INR', amount: toNum(m[1]), merchant: m[2].trim(),
+  if ((m = body.match(new RegExp(`Auto ?Pay of INR\\s*${AMT}\\s*for\\s+(.+?)\\s+has been processed`, 'i'))))
+    return { currency: 'INR', amount: toNum(m[1]), merchant: clean(m[2]),
+             charge: true, kind: 'card_autopay', gmail_id: msg.gmailId };
+  if ((m = body.match(new RegExp(`successful AutoPay transaction:.*?Transaction Amount:\\s*(USD|INR)\\s*${AMT}\\s*Merchant Name:\\s*([A-Za-z0-9 .&'-]{2,40}?)\\s*AutoPay ID`, 'i')))) {
+    const currency = m[1].toUpperCase();
+    const amount = toNum(m[2]);       // the amount actually charged (0 = a setup pre-auth, no money moved)
+    return { currency, amount, merchant: clean(m[3]),
+             charge: amount > 0,      // money moved → real spend, in any currency
              kind: 'card_autopay', gmail_id: msg.gmailId };
-  if ((m = body.match(new RegExp(`Transaction Amount:\\s*(USD|INR)\\s*${AMT}\\s*Merchant Name:\\s*(.+?)\\s*AutoPay ID`, 'i'))))
-    return { currency: m[1].toUpperCase(), amount: toNum(m[2]), merchant: m[3].trim(),
-             kind: 'card_autopay', activation: /activated/i.test(subject), gmail_id: msg.gmailId };
+  }
   return null;
 }

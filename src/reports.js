@@ -2,7 +2,7 @@
 // All figures come from ledger SQL; Claude only adds an optional one-line nudge.
 import { sumAmount, byCategory, listTxns, topMerchants, listSubscriptions } from './ledger.js';
 import { send, esc, b, i } from './slack.js';
-import { inr, yesterday, thisMonth, lastWeek, prevMonth, daysInMonthSoFar } from './timeutil.js';
+import { inr, subAmount, yesterday, thisMonth, lastWeek, prevMonth, daysInMonthSoFar } from './timeutil.js';
 import { askClaude } from './claude.js';
 
 const hhmm = (ist) => esc(ist.slice(11, 16));
@@ -50,11 +50,13 @@ export async function weeklyReport(env) {
   const db = env.DB, w = lastWeek();
   const cur = await sumAmount(db, { from: w.from, to: w.to, direction: 'debit' });
   const prev = await sumAmount(db, { from: w.from - 7 * 86400, to: w.from, direction: 'debit' });
+  const credit = await sumAmount(db, { from: w.from, to: w.to, direction: 'credit' });
   const cats = await byCategory(db, { from: w.from, to: w.to, direction: 'debit' });
   const top = await topMerchants(db, { from: w.from, to: w.to, limit: 5 });
   const dp = prev.sum > 0 ? Math.round((cur.sum / prev.sum - 1) * 100) : null;
 
   let body = `📅 ${b('Weekly review — last 7 days')}\n\n💸 Spent: ${b(inr(cur.sum))} · ${cur.count} txns`;
+  if (credit.sum > 0) body += `\n💰 Income: ${b(inr(credit.sum))}`;
   if (dp !== null) body += `\n${dp >= 0 ? '▲' : '▼'} ${Math.abs(dp)}% vs the week before (${inr(prev.sum)})`;
   body += `\n\n${b('By category')}\n${catLines(cats) || '  —'}`;
   if (top.length) body += `\n\n${b('Top merchants')}\n${top.map((t) => `  • ${esc(t.counterparty)} — ${inr(t.s)}`).join('\n')}`;
@@ -76,7 +78,7 @@ export async function monthlyReport(env) {
   if (rate !== null) body += ` ${i('(' + rate + '% saved)')}`;
   body += `\n\n${b('By category')}\n${catLines(cats) || '  —'}`;
   if (top.length) body += `\n\n${b('Top merchants')}\n${top.map((t) => `  • ${esc(t.counterparty)} — ${inr(t.s)}`).join('\n')}`;
-  if (subs.length) body += `\n\n${b('Subscriptions on file')}\n${subs.map((s) => `  • ${esc(s.merchant)} — ${s.currency === 'INR' ? inr(s.amount) : `${s.currency} ${s.amount}`}`).join('\n')}`;
+  if (subs.length) body += `\n\n${b('Subscriptions on file')}\n${subs.map((s) => `  • ${esc(s.merchant)} — ${subAmount(s.currency, s.amount)}`).join('\n')}`;
   body += await nudge(env, `Last month spent ₹${Math.round(debit.sum)}, earned ₹${Math.round(credit.sum)}, saved ${rate}%. Biggest category ${cats[0]?.category || '-'}.`);
   await send(env, body);
 }

@@ -47,6 +47,7 @@ async function buildDashboardData(env) {
     recent: await listTxns(db, { from: lastDays(100, now).from, to: now + 1, limit: 12 }),
     daily: await dailyTotals(db, { from: r30.from, to: r30.to, direction: 'debit' }),
     subs: await listSubscriptions(db),
+    income: await listTxns(db, { from: lastDays(60, now).from, to: now + 1, direction: 'credit', limit: 8 }),
   };
 }
 

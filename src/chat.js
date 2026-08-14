@@ -9,7 +9,7 @@ import {
   addManual, setBudget, getBudgets, setOverride, recategorize, getMeta, setMeta,
 } from './ledger.js';
 import { categorize, merchantKey } from './categorize.js';
-import { inr, yesterday, today, thisMonth, prevMonth, lastWeek, lastDays, nowEpoch } from './timeutil.js';
+import { inr, subAmount, yesterday, today, thisMonth, prevMonth, lastWeek, lastDays, nowEpoch } from './timeutil.js';
 
 const HELP = `🤖 ${b('Finance bot — what I can do')}
 
@@ -74,7 +74,7 @@ async function execIntent(env, it) {
     }
     case 'subscriptions': {
       const subs = await listSubscriptions(db);
-      return subs.length ? `${b('Subscriptions')}\n${subs.map((s) => `  • ${esc(s.merchant)} — ${s.currency === 'INR' ? inr(s.amount) : `${s.currency} ${s.amount}`}`).join('\n')}` : 'No subscriptions detected yet.';
+      return subs.length ? `${b('Subscriptions')}\n${subs.map((s) => `  • ${esc(s.merchant)} — ${subAmount(s.currency, s.amount)}`).join('\n')}` : 'No subscriptions detected yet.';
     }
     case 'help': default:
       return HELP;

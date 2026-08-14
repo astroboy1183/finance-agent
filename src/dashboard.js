@@ -1,7 +1,7 @@
 // dashboard.js — self-contained HTML (inline CSS, no external requests).
 // Engineer-dark theme to match jayanthappalla.com. All numbers precomputed by
 // the caller from ledger SQL.
-import { inr } from './timeutil.js';
+import { inr, subAmount } from './timeutil.js';
 
 const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -14,6 +14,8 @@ h1{font-size:20px;margin:0 0 2px;font-family:ui-monospace,SFMono-Regular,Menlo,m
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .grid{display:grid;gap:14px}
 .win{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px}
+@media(max-width:560px){.kpi{grid-template-columns:1fr}}
 .card{background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:12px;padding:16px}
 .k{color:var(--dim);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
 .v{font-size:22px;font-weight:600;margin-top:4px;font-family:ui-monospace,monospace}
@@ -62,37 +64,37 @@ export function renderDashboard(d) {
     <div class="bar" style="width:${Math.round((c.s / maxCat) * 100)}%"></div>`).join('') || '<div class="tag">no data</div>';
 
   const top = d.top.map((t) => `<div class="row"><span>${esc(t.counterparty)} <span class="tag">${esc(t.category || '')}</span></span><span class="amt">${inr(t.s)}</span></div>`).join('') || '<div class="tag">no data</div>';
-  const recent = d.recent.map((t) => `<div class="row"><span>${t.direction === 'credit' ? '➕' : '➖'} ${esc(t.counterparty || '?')} <span class="tag">${esc(t.ts_ist.slice(0, 16))}</span></span><span class="amt">${inr(t.amount)}</span></div>`).join('') || '<div class="tag">no data</div>';
+  const recent = d.recent.map((t) => `<div class="row"><span>${t.direction === 'credit' ? '➕' : '➖'} ${esc(t.counterparty || '?')} <span class="tag">${esc(t.ts_ist.slice(0, 16))}</span></span><span class="amt${t.direction === 'credit' ? ' net-pos' : ''}">${inr(t.amount)}</span></div>`).join('') || '<div class="tag">no data</div>';
   const spark = d.daily.map((x) => `<span title="${esc(x.day_ist)}: ${inr(x.s)}" style="height:${Math.round((x.s / maxDay) * 100)}%"></span>`).join('');
-  const subs = d.subs.map((s) => `<div class="row"><span>${esc(s.merchant)}</span><span class="amt">${s.currency === 'INR' ? inr(s.amount) : esc(s.currency) + ' ' + esc(s.amount)}</span></div>`).join('') || '<div class="tag">none detected</div>';
+  const subs = d.subs.map((s) => `<div class="row"><span>${esc(s.merchant)}</span><span class="amt">${esc(subAmount(s.currency, s.amount))}</span></div>`).join('') || '<div class="tag">none detected</div>';
+  const income = (d.income || []).map((t) => `<div class="row"><span>➕ ${esc(t.counterparty || '?')} <span class="tag">${esc(t.channel || '')} · ${esc(t.ts_ist.slice(0, 10))}</span></span><span class="amt net-pos">${inr(t.amount)}</span></div>`).join('') || '<div class="tag">no credits</div>';
 
   const netCls = d.month.net >= 0 ? 'net-pos' : 'net-neg';
   const body = `<div class="wrap">
     <h1 class="mono">💰 finance-agent</h1>
     <div class="sub">as of ${esc(d.generatedIst)} IST · <span class="mono">${esc(d.month.label)}</span></div>
 
+    <div class="kpi">
+      <div class="card"><div class="k">spent · ${esc(d.month.label)}</div><div class="v">${inr(d.month.spent)}</div></div>
+      <div class="card"><div class="k">income · ${esc(d.month.label)}</div><div class="v" style="color:var(--green)">${inr(d.month.income)}</div></div>
+      <div class="card"><div class="k">net</div><div class="v ${netCls}">${inr(d.month.net)}</div><div class="tag">${d.month.rate !== null ? `${d.month.rate}% saved` : ''}</div></div>
+    </div>
+
     <div class="grid win">${winCards}</div>
 
     <div class="cols">
-      <div class="card">
-        <h2>This month</h2>
-        <div class="row"><span>Spent</span><span class="amt">${inr(d.month.spent)}</span></div>
-        <div class="row"><span>Income</span><span class="amt">${inr(d.month.income)}</span></div>
-        <div class="row"><span>Net</span><span class="amt ${netCls}">${inr(d.month.net)}${d.month.rate !== null ? ` <span class="tag">(${d.month.rate}% saved)</span>` : ''}</span></div>
-        <h2 style="margin-top:16px">Daily spend · last 30d</h2>
-        <div class="spark">${spark}</div>
-      </div>
+      <div class="card"><h2>Daily spend · last 30d</h2><div class="spark">${spark}</div></div>
       <div class="card"><h2>Category breakdown · 30d</h2>${cats}</div>
+    </div>
+
+    <div class="cols">
+      <div class="card"><h2>💰 Income · recent credits</h2>${income}</div>
+      <div class="card"><h2>Subscriptions</h2>${subs}</div>
     </div>
 
     <div class="cols">
       <div class="card"><h2>Top merchants · 30d</h2>${top}</div>
       <div class="card"><h2>Recent transactions</h2>${recent}</div>
-    </div>
-
-    <div class="cols">
-      <div class="card"><h2>Subscriptions</h2>${subs}</div>
-      <div class="card"><h2>About</h2><p class="tag">Fed by Axis Bank + UPI email alerts. Card AutoPays (incl. USD) are tracked as subscriptions, not counted in INR spend. Ask the Slack bot anything, or log cash with “add 200 cash lunch”.</p></div>
     </div>
   </div>`;
   return page('finance-agent', body);

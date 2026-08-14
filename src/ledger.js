@@ -154,7 +154,8 @@ export async function upsertSubscription(db, { merchant, currency, amount, ts, s
   await db.prepare(
     `INSERT INTO subscriptions(merchant,currency,amount,last_seen,source) VALUES(?,?,?,?,?)
      ON CONFLICT(merchant) DO UPDATE SET currency=excluded.currency, amount=excluded.amount,
-       last_seen=excluded.last_seen, source=excluded.source`,
+       last_seen=excluded.last_seen, source=excluded.source
+     WHERE excluded.last_seen > subscriptions.last_seen`,
   ).bind(merchant, currency, amount, ts, source).run();
 }
 export async function listSubscriptions(db) {
