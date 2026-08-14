@@ -60,6 +60,12 @@ async function buildDashboardData(env) {
     channels: await channelSplit(db, { from: r30.from, to: r30.to, direction: 'debit' }),
     upiSplit: await upiTypeSplit(db, { from: r30.from, to: r30.to }),
     sizes: await sizeBuckets(db, { from: r30.from, to: r30.to }),
+    // compact transaction feed for client-side drill-downs (last 120 days)
+    tx: (await listTxns(db, { from: lastDays(120, now).from, to: now + 1, limit: 600 })).map((t) => ({
+      d: t.day_ist, t: t.ts_ist.slice(11, 16), a: t.amount,
+      dir: t.direction === 'credit' ? 'c' : 'd', m: t.counterparty || '',
+      c: t.category || '', ch: t.channel || '',
+    })),
   };
 }
 
