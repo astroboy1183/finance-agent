@@ -1,0 +1,21 @@
+# Copy to .dev.vars for `wrangler dev`, and set the same as prod secrets with
+# `wrangler secret put <NAME>`. NEVER commit real values (.dev.vars is gitignored).
+
+# Gmail (reuse the existing gmail.readonly grant from ~/agents/mail_digest/token.json)
+GMAIL_CLIENT_ID=
+GMAIL_CLIENT_SECRET=
+GMAIL_REFRESH_TOKEN=
+
+# Anthropic (report narrative + chat intent routing)
+ANTHROPIC_API_KEY=
+
+# Slack app (bot token xoxb-... + app signing secret from api.slack.com/apps)
+SLACK_BOT_TOKEN=
+SLACK_SIGNING_SECRET=
+# Optional: force a channel id for reports; otherwise the DM channel is captured
+# from the first message you send the bot.
+SLACK_CHANNEL=
+
+# Dashboard passphrase + admin key for /ingest,/report
+DASH_PASS=
+INGEST_KEY=

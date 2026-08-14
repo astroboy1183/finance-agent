@@ -1,0 +1,15 @@
+{
+  "name": "finance-agent",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test/parser.test.mjs",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init:local": "wrangler d1 execute finance --local --file=schema.sql",
+    "db:init": "wrangler d1 execute finance --remote --file=schema.sql"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

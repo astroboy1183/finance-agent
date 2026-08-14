@@ -1,0 +1,137 @@
+// parser.js — deterministic parser for Axis Bank / UPI transaction-alert emails.
+//
+// No model is involved here: money, dates and references are extracted with
+// regexes tuned to the exact Axis templates. Returns a normalised transaction
+// object, or null for non-transactional mail (statements, offers, autopay
+// activations, etc). Categorisation and merchant prettifying happen elsewhere.
+
+const AMT = String.raw`([\d,]+\.\d{2})`;
+
+export function toNum(s) {
+  return parseFloat(String(s).replace(/,/g, ''));
+}
+
+// ---- IST time helpers -------------------------------------------------------
+// The bank stamps every alert in IST (UTC+5:30). We store a real UTC epoch plus
+// pre-rendered IST strings so grouping "by day" never drifts across midnight.
+const IST_OFFSET_S = (5 * 60 + 30) * 60;
+
+export function istToEpoch(y, mon, d, hh, mm, ss) {
+  return Math.floor(Date.UTC(y, mon - 1, d, hh, mm, ss) / 1000) - IST_OFFSET_S;
+}
+
+export function istParts(epoch) {
+  const d = new Date((epoch + IST_OFFSET_S) * 1000);
+  const p = (n) => String(n).padStart(2, '0');
+  const day = `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
+  const time = `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
+  return { day, time, ist: `${day} ${time}` };
+}
+
+// ---- field extractors -------------------------------------------------------
+function extractAmountDirection(subject, body) {
+  let m;
+  if ((m = body.match(new RegExp(`Amount\\s+Debited:\\s*INR\\s*${AMT}`, 'i'))))
+    return { direction: 'debit', amount: toNum(m[1]) };
+  if ((m = body.match(new RegExp(`Amount\\s+Credited:\\s*INR\\s*${AMT}`, 'i'))))
+    return { direction: 'credit', amount: toNum(m[1]) };
+  if ((m = body.match(new RegExp(`credited with INR\\s*${AMT}`, 'i'))))
+    return { direction: 'credit', amount: toNum(m[1]) };
+  if ((m = body.match(new RegExp(`debited with INR\\s*${AMT}`, 'i'))))
+    return { direction: 'debit', amount: toNum(m[1]) };
+  // last resort: the subject line itself carries both
+  if ((m = subject.match(new RegExp(`INR\\s*${AMT}\\s*was\\s*(debited|credited)`, 'i'))))
+    return { direction: m[2].toLowerCase(), amount: toNum(m[1]) };
+  return null;
+}
+
+function extractTime(body, internalDateMs) {
+  let m;
+  // "Date & Time: 12-08-26, 07:52:47 IST"  (DD-MM-YY)
+  if ((m = body.match(/Date\s*&\s*Time:\s*(\d{2})-(\d{2})-(\d{2}),?\s*(\d{2}):(\d{2}):(\d{2})/i)))
+    return istToEpoch(2000 + +m[3], +m[2], +m[1], +m[4], +m[5], +m[6]);
+  // NEFT: "on 04-08-2026 at 19:04:22 IST"  (DD-MM-YYYY)
+  if ((m = body.match(/on\s*(\d{2})-(\d{2})-(\d{4})\s*at\s*(\d{2}):(\d{2}):(\d{2})/i)))
+    return istToEpoch(+m[3], +m[2], +m[1], +m[4], +m[5], +m[6]);
+  // fallback to Gmail's internalDate
+  if (internalDateMs) return Math.floor(Number(internalDateMs) / 1000);
+  return null;
+}
+
+function extractInfo(body) {
+  // "Transaction Info: UPI/P2M/222631984403/Idealprepaid India"
+  let m = body.match(/Transaction\s*Info:\s*(.+?)(?:\s+If this transaction|\s+Feel free|\s+Call us|\s+To block|\s+\*\*\*\*|$)/i);
+  if (m) {
+    const raw = m[1].trim();
+    const u = raw.match(/^UPI\/(P2M|P2A|P2P|P2PA)\/(\w+)\/(.+)$/i);
+    if (u) {
+      const rest = u[3].trim();
+      return { channel: 'UPI', upi_type: u[1].toUpperCase(), ref: u[2],
+               counterparty: rest.split('/')[0].trim(), counterparty_raw: rest };
+    }
+    return { channel: 'UPI', upi_type: null, ref: null,
+             counterparty: raw, counterparty_raw: raw };
+  }
+  // NEFT / IMPS / RTGS: "by NEFT/SBIN426216377184/CITA"
+  m = body.match(/by\s+(NEFT|IMPS|RTGS)\/([A-Za-z0-9]+)\/([^\s.]+)/i);
+  if (m)
+    return { channel: m[1].toUpperCase(), upi_type: null, ref: m[2],
+             counterparty: m[3].trim(), counterparty_raw: m[0].replace(/^by\s+/i, '') };
+  return { channel: null, upi_type: null, ref: null, counterparty: null, counterparty_raw: null };
+}
+
+// ---- main -------------------------------------------------------------------
+// msg = { subject, body, gmailId, internalDate }  (body = decoded plain text)
+export function parseAlert(msg) {
+  const subject = msg.subject || '';
+  const body = (msg.body || '').replace(/ /g, ' ').replace(/\s+/g, ' ').trim();
+
+  // Skip obvious non-transaction mail early.
+  if (/\b(e-?statement|statement for|loan offer|special offer|activated|otp|one time password)\b/i.test(subject)
+      && !/was (debited|credited)/i.test(subject))
+    return null;
+
+  const ad = extractAmountDirection(subject, body);
+  if (!ad || !(ad.amount > 0)) return null;
+
+  const ts = extractTime(body, msg.internalDate);
+  if (!ts) return null;
+
+  const info = extractInfo(body);
+  const { day, ist } = istParts(ts);
+
+  return {
+    id: msg.gmailId,                 // dedup key: one alert email == one txn
+    ts,
+    ts_ist: ist,
+    day_ist: day,
+    direction: ad.direction,
+    amount: ad.amount,
+    currency: 'INR',
+    channel: info.channel || 'BANK',
+    upi_type: info.upi_type,
+    counterparty: info.counterparty,
+    counterparty_raw: info.counterparty_raw,
+    ref: info.ref,
+    source: 'gmail',
+    gmail_id: msg.gmailId,
+  };
+}
+
+// Card AutoPay emails (INR "Auto Pay of INR X for MERCHANT" and USD
+// "Transaction Amount: USD X Merchant Name: ...") are deliberately NOT ledger
+// transactions — the card bill is later settled from the A/c as one debit, so
+// counting them would double-count, and USD would mix currencies. Instead we
+// surface them to the subscription radar.
+export function parseCardAutopay(msg) {
+  const body = (msg.body || '').replace(/\s+/g, ' ').trim();
+  const subject = msg.subject || '';
+  let m;
+  if ((m = body.match(new RegExp(`Auto ?Pay of INR\\s*${AMT}\\s*for\\s*(.+?)\\s*has been processed`, 'i'))))
+    return { currency: 'INR', amount: toNum(m[1]), merchant: m[2].trim(),
+             kind: 'card_autopay', gmail_id: msg.gmailId };
+  if ((m = body.match(new RegExp(`Transaction Amount:\\s*(USD|INR)\\s*${AMT}\\s*Merchant Name:\\s*(.+?)\\s*AutoPay ID`, 'i'))))
+    return { currency: m[1].toUpperCase(), amount: toNum(m[2]), merchant: m[3].trim(),
+             kind: 'card_autopay', activation: /activated/i.test(subject), gmail_id: msg.gmailId };
+  return null;
+}

@@ -1,0 +1,20 @@
+name = "finance-agent"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+workers_dev = true
+
+# D1 ledger — bound as env.DB
+[[d1_databases]]
+binding = "DB"
+database_name = "finance"
+database_id = "13cde827-f91c-4086-9158-1bfbc6ea5604"
+
+# One hourly cron (Cloudflare free tier caps the account at 5 total). Each run
+# ingests new emails; the ~06:xx IST run additionally fires the morning report,
+# plus the weekly review on Sundays and the monthly report on the 1st. Dedupe
+# guards in scheduled() ensure each briefing sends once per period.
+[triggers]
+crons = ["5 * * * *"]
+
+[observability]
+enabled = true
