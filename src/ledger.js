@@ -87,6 +87,43 @@ export async function topMerchants(db, { from, to, direction = 'debit', limit = 
   return r.results || [];
 }
 
+export async function monthlyTotals(db, { from, to }) {
+  const r = await db.prepare(
+    `SELECT substr(day_ist,1,7) ym,
+      COALESCE(SUM(CASE WHEN direction='debit'  THEN amount END),0) debit,
+      COALESCE(SUM(CASE WHEN direction='credit' THEN amount END),0) credit
+     FROM transactions WHERE ts>=? AND ts<? AND currency='INR' GROUP BY ym ORDER BY ym`,
+  ).bind(from, to).all();
+  return r.results || [];
+}
+
+export async function channelSplit(db, { from, to, direction = 'debit' }) {
+  const r = await db.prepare(
+    `SELECT COALESCE(channel,'?') channel, SUM(amount) s, COUNT(*) c FROM transactions
+     WHERE ts>=? AND ts<? AND direction=? AND currency='INR' GROUP BY channel ORDER BY s DESC`,
+  ).bind(from, to, direction).all();
+  return r.results || [];
+}
+
+export async function upiTypeSplit(db, { from, to }) {
+  const r = await db.prepare(
+    `SELECT COALESCE(upi_type,'OTHER') t, SUM(amount) s, COUNT(*) c FROM transactions
+     WHERE ts>=? AND ts<? AND direction='debit' AND currency='INR' GROUP BY t`,
+  ).bind(from, to).all();
+  return r.results || [];
+}
+
+export async function sizeBuckets(db, { from, to }) {
+  return await db.prepare(
+    `SELECT
+      COALESCE(SUM(CASE WHEN amount<200 THEN 1 END),0) b1,
+      COALESCE(SUM(CASE WHEN amount>=200 AND amount<1000 THEN 1 END),0) b2,
+      COALESCE(SUM(CASE WHEN amount>=1000 AND amount<5000 THEN 1 END),0) b3,
+      COALESCE(SUM(CASE WHEN amount>=5000 THEN 1 END),0) b4
+     FROM transactions WHERE ts>=? AND ts<? AND direction='debit' AND currency='INR'`,
+  ).bind(from, to).first();
+}
+
 export async function biggestDebit(db, { from, to }) {
   return await db.prepare(
     `SELECT amount, counterparty, day_ist, category FROM transactions

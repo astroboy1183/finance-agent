@@ -7,7 +7,7 @@ import { verifySlack } from './slack.js';
 import { renderDashboard, renderLogin } from './dashboard.js';
 import {
   sumAmount, byCategory, topMerchants, listTxns, dailyTotals, listSubscriptions,
-  getMeta, alertOnce, biggestDebit,
+  getMeta, alertOnce, biggestDebit, monthlyTotals, channelSplit, upiTypeSplit, sizeBuckets,
 } from './ledger.js';
 import { thisMonth, prevMonth, lastDays, istDay, nowEpoch, daysInMonthSoFar } from './timeutil.js';
 
@@ -56,6 +56,10 @@ async function buildDashboardData(env) {
     dailyDebit: await dailyTotals(db, { from: r91.from, to: now + 1, direction: 'debit' }),
     subs: await listSubscriptions(db),
     income_list: await listTxns(db, { from: lastDays(60, now).from, to: now + 1, direction: 'credit', limit: 6 }),
+    monthly: await monthlyTotals(db, { from: lastDays(200, now).from, to: now + 1 }),
+    channels: await channelSplit(db, { from: r30.from, to: r30.to, direction: 'debit' }),
+    upiSplit: await upiTypeSplit(db, { from: r30.from, to: r30.to }),
+    sizes: await sizeBuckets(db, { from: r30.from, to: r30.to }),
   };
 }
 
