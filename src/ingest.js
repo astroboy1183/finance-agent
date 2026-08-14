@@ -39,13 +39,15 @@ export async function ingest(env, { days = 2, after, before, skipChecks = false 
       subs.push({ ...sub, ts });
       if (sub.charge) {                                    // real card charge → spend (₹; USD converted)
         const p = istParts(ts);
-        const inrAmt = sub.currency === 'INR' ? sub.amount : Math.round(sub.amount * USD_INR);
+        const inrAmt = sub.currency === 'INR'
+          ? sub.amount
+          : Math.round(sub.amount * USD_INR * 100) / 100;   // keep paise
         txns.push({
           id: msg.gmailId, ts, ts_ist: p.ist, day_ist: p.day, direction: 'debit',
           amount: inrAmt, currency: 'INR', channel: 'CARD', upi_type: null,
           counterparty: sub.merchant, counterparty_raw: sub.merchant,
           category: 'subscriptions', ref: null, source: 'gmail', gmail_id: msg.gmailId,
-          note: sub.currency === 'INR' ? 'card autopay' : `card autopay ${sub.currency} ${sub.amount} @~${USD_INR}`,
+          note: sub.currency === 'INR' ? 'card autopay' : `card autopay ${sub.currency} ${sub.amount} @${USD_INR}`,
           created_at: nowE,
         });
       }

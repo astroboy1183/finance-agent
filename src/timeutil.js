@@ -50,9 +50,11 @@ export function daysInMonthSoFar(now = nowEpoch()) {
   return Number(istDay(now).split('-')[2]);
 }
 
-// Rough USD→INR for DISPLAY of foreign subscriptions only. Real spend always
-// uses the exact INR from the bank's charge alert — never this.
-export const USD_INR = 87.5;
+// Effective USD→INR for the Axis card, i.e. the ALL-IN rate the card actually
+// bills at: spot + forex markup (~3.5%) + GST. Derived from a real Anthropic
+// charge (USD 118 → ₹11,729.48 ⇒ 99.4024). Card alert emails only give USD, so
+// we convert with this; the exact figure still only lives on the card statement.
+export const USD_INR = 99.4024;
 export function subAmount(currency, amount) {
   if (!currency || currency === 'INR') return inr(amount);
   if (currency === 'USD') return `USD ${amount} (~${inr(amount * USD_INR)})`;
