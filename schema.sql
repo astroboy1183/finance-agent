@@ -53,3 +53,12 @@ CREATE TABLE IF NOT EXISTS alerts_sent ( -- dedup for anomaly/budget pings
   k  TEXT PRIMARY KEY,
   ts INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS sms_raw ( -- every forwarded SMS (audit + parser tuning)
+  id     TEXT PRIMARY KEY,
+  ts     INTEGER,
+  sender TEXT,
+  body   TEXT,
+  parsed INTEGER DEFAULT 0,   -- 1 if it produced a transaction
+  note   TEXT                 -- 'unparsed' | 'dup-of-email' | null
+);

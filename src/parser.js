@@ -147,3 +147,43 @@ export function parseCardAutopay(msg) {
   }
   return null;
 }
+
+// Parse a bank transaction SMS into a normalized transaction, or null. First
+// pass tuned to common Axis SMS shapes; refine against real samples. Catches the
+// card charges (Udemy, international) that email never sends. Returns partial —
+// the ingester fills ts/category and cross-source-dedupes against email.
+const SMS_AMT = String.raw`(?:INR|Rs\.?)\s*([\d,]+(?:\.\d{1,2})?)`;
+export function parseSms(text) {
+  const s = clean(text);
+  if (!s) return null;
+  // ignore OTPs, promos, balance/limit-only, reminders
+  if (/\b(otp|one[- ]time password|verification code|will expire|expires|pre-?approved|eligible|reward|cashback|% ?off|discount|loan offer|emi offer|upcoming autopay|to be debited|blocked if)\b/i.test(s)) return null;
+
+  const am = s.match(new RegExp(SMS_AMT, 'i'));
+  if (!am) return null;
+  const amount = toNum(am[1]);
+  if (!(amount > 0)) return null;
+
+  let direction = null;
+  if (/\b(debited|spent|paid|purchase|withdrawn|deducted)\b/i.test(s)) direction = 'debit';
+  else if (/\b(credited|received|refunded?)\b/i.test(s)) direction = 'credit';
+  if (!direction) return null;
+
+  const channel = /\b(upi|vpa)\b/i.test(s) ? 'UPI'
+    : /\bcard\b/i.test(s) ? 'CARD'
+    : /\bneft\b/i.test(s) ? 'NEFT' : /\bimps\b/i.test(s) ? 'IMPS' : /\brtgs\b/i.test(s) ? 'RTGS' : 'BANK';
+
+  let counterparty = null, counterparty_raw = null, upi_type = null, ref = null, m;
+  if ((m = s.match(/UPI\/(P2M|P2A|P2P)\/(\w+)\/([A-Za-z0-9 .&'-]+)/i))) {
+    upi_type = m[1].toUpperCase(); ref = m[2]; counterparty_raw = m[3].trim(); counterparty = counterparty_raw.split('/')[0].trim();
+  } else if ((m = s.match(/\b(?:at|to|towards|for|VPA)\s+([A-Za-z0-9@][A-Za-z0-9 @.&'*-]{1,38}?)(?:\s+on\b|\s+ref\b|\s+Avl\b|[.,]|\s*$)/i))) {
+    counterparty = m[1].trim(); counterparty_raw = counterparty;
+  }
+
+  let ts = null;
+  if ((m = s.match(/(\d{2})-(\d{2})-(\d{2,4})(?:[ ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/))) {
+    const yy = m[3].length === 2 ? 2000 + +m[3] : +m[3];
+    ts = istToEpoch(yy, +m[2], +m[1], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+  }
+  return { amount, direction, channel, upi_type, counterparty, counterparty_raw, ref, ts };
+}

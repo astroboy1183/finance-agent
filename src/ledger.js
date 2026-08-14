@@ -208,6 +208,23 @@ export async function listSubscriptions(db) {
   return r.results || [];
 }
 
+export async function saveRawSms(db, { id, ts, sender, body, parsed, note }) {
+  await db.prepare('INSERT OR IGNORE INTO sms_raw(id,ts,sender,body,parsed,note) VALUES(?,?,?,?,?,?)')
+    .bind(id, ts, sender || '', body || '', parsed ? 1 : 0, note || null).run();
+}
+export async function recentRawSms(db, limit = 40) {
+  const r = await db.prepare('SELECT ts,sender,body,parsed,note FROM sms_raw ORDER BY ts DESC LIMIT ?').bind(limit).all();
+  return r.results || [];
+}
+// True if a transaction with (near) the same amount/time/direction already
+// exists (from email) — so an SMS for the same UPI payment isn't double-counted.
+export async function crossSourceExists(db, { ts, amount, direction }) {
+  const r = await db.prepare(
+    `SELECT COUNT(*) c FROM transactions WHERE direction=? AND currency='INR' AND ABS(amount-?)<0.5 AND ABS(ts-?)<1200`,
+  ).bind(direction, amount, ts).first();
+  return (r?.c || 0) > 0;
+}
+
 // Insert-or-ignore into alerts_sent; returns true the FIRST time only.
 export async function alertOnce(db, key) {
   const r = await db.prepare('INSERT OR IGNORE INTO alerts_sent(k,ts) VALUES(?,?)')

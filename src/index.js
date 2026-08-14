@@ -1,6 +1,8 @@
 // index.js — Worker entry. fetch() serves the dashboard, Slack events and admin
 // endpoints; scheduled() dispatches the cron jobs by their schedule.
 import { ingest } from './ingest.js';
+import { handleSms } from './sms.js';
+import { recentRawSms } from './ledger.js';
 import { morningReport, weeklyReport, monthlyReport } from './reports.js';
 import { handleSlackEvent } from './chat.js';
 import { verifySlack } from './slack.js';
@@ -86,6 +88,25 @@ export default {
         return new Response('forbidden', { status: 403 });
       if (payload.type === 'event_callback') ctx.waitUntil(handleSlackEvent(env, payload.event));
       return new Response('');   // ack within 3s; reply is posted async
+    }
+
+    // Bank SMS forwarded from the phone (key-gated). Accepts JSON or form.
+    if (path === '/sms' && request.method === 'POST') {
+      if (url.searchParams.get('key') !== env.SMS_KEY) return new Response('forbidden', { status: 403 });
+      let p = {};
+      const ct = request.headers.get('content-type') || '';
+      if (ct.includes('json')) p = await request.json().catch(() => ({}));
+      else { const f = await request.formData().catch(() => null); if (f) for (const [k, v] of f) p[k] = v; }
+      const text = p.text || p.message || p.body || p.msg || p.sms || '';
+      const sender = p.from || p.sender || p.address || p.originator || p.number || '';
+      let ts = Number(p.sentStamp || p.timestamp || p.time || p.ts || 0);
+      ts = ts > 1e12 ? Math.floor(ts / 1000) : (ts || Math.floor(Date.now() / 1000));
+      if (!text) return Response.json({ ok: false, error: 'no text field' }, { status: 400 });
+      return Response.json({ ok: true, ...(await handleSms(env, { sender, text, ts })) });
+    }
+    // Inspect recently forwarded SMS (to tune the parser)
+    if (path === '/sms/raw' && url.searchParams.get('key') === env.INGEST_KEY) {
+      return Response.json(await recentRawSms(env.DB, Math.min(Number(url.searchParams.get('n') || 40), 200)));
     }
 
     if (path === '/health') {
