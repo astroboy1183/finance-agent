@@ -124,6 +124,14 @@ export async function sizeBuckets(db, { from, to }) {
   ).bind(from, to).first();
 }
 
+// Cheap signature that changes whenever the ledger changes — powers live refresh.
+export async function dataSignature(db) {
+  const r = await db.prepare(
+    `SELECT COUNT(*) c, COALESCE(MAX(created_at),0) m, COALESCE(ROUND(SUM(amount)),0) s FROM transactions`,
+  ).first();
+  return `${r?.c || 0}:${r?.m || 0}:${r?.s || 0}`;
+}
+
 export async function biggestDebit(db, { from, to }) {
   return await db.prepare(
     `SELECT amount, counterparty, day_ist, category FROM transactions

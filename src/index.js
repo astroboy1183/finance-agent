@@ -9,7 +9,7 @@ import { verifySlack } from './slack.js';
 import { renderDashboard, renderLogin } from './dashboard.js';
 import {
   sumAmount, byCategory, topMerchants, listTxns, dailyTotals, listSubscriptions,
-  getMeta, alertOnce, biggestDebit, monthlyTotals, channelSplit, upiTypeSplit, sizeBuckets,
+  getMeta, alertOnce, biggestDebit, monthlyTotals, channelSplit, upiTypeSplit, sizeBuckets, dataSignature,
 } from './ledger.js';
 import { thisMonth, prevMonth, lastDays, istDay, nowEpoch, daysInMonthSoFar } from './timeutil.js';
 
@@ -46,6 +46,7 @@ async function buildDashboardData(env) {
   return {
     now,
     generatedIst: istDay(now),
+    sig: await dataSignature(db),
     windows,
     month: {
       label: mtd.label, spent, income, net, rate,
@@ -128,6 +129,12 @@ export default {
       const fn = { morning: morningReport, weekly: weeklyReport, monthly: monthlyReport }[t] || morningReport;
       await fn(env);
       return Response.json({ sent: t || 'morning' });
+    }
+
+    // Live-refresh heartbeat: the dashboard polls this; a changed sig → reload.
+    if (path === '/pulse') {
+      if (getCookie(request, 'fa') !== (await cookieToken(env))) return new Response('forbidden', { status: 403 });
+      return Response.json({ sig: await dataSignature(env.DB) }, { headers: { 'cache-control': 'no-store' } });
     }
 
     // Dashboard + login

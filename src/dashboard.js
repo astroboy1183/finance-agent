@@ -30,6 +30,11 @@ a{color:var(--acc);text-decoration:none}
 .brand .logo{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;font-size:19px;background:linear-gradient(145deg,rgba(91,157,255,.28),rgba(124,92,255,.20));border:1px solid var(--brd)}
 .brand h1{font-size:16px;margin:0;letter-spacing:-.01em}.brand .sub{color:var(--dim);font-size:12px;margin-top:1px}
 .pill{color:var(--dim);font-size:11.5px;border:1px solid var(--brd);border-radius:999px;padding:6px 12px;background:var(--card-2)}
+.live{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim);border:1px solid var(--brd);border-radius:999px;padding:6px 12px;background:var(--card-2)}
+.live .ld{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 1.7s infinite}
+.live #clock{color:var(--text)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(55,201,143,.55)}70%{box-shadow:0 0 0 7px rgba(55,201,143,0)}100%{box-shadow:0 0 0 0 rgba(55,201,143,0)}}
+.flash{animation:flash 1s ease}@keyframes flash{0%{background:rgba(55,201,143,.16)}100%{background:transparent}}
 
 .card{background:linear-gradient(180deg,var(--card),var(--card-2));border:1px solid var(--brd);border-radius:18px;padding:18px 20px;box-shadow:var(--shadow);
   cursor:pointer;transition:transform .13s ease,border-color .13s,box-shadow .13s;position:relative}
@@ -264,12 +269,15 @@ export function renderDashboard(d) {
   const insightCards = ins.slice(0, 4).map((x) => `<div class="insight"><span class="ico">${x[0]}</span><span class="tx">${x[1]}</span></div>`).join('');
   const momTag = momSame === null ? '' : `<span class="delta ${momSame >= 0 ? 'up' : 'down'}">${momSame >= 0 ? '▲' : '▼'} ${Math.abs(momSame)}% vs last month (same days)</span>`;
 
-  const dataJson = JSON.stringify({ tx: d.tx || [], today }).replace(/</g, '\\u003c');
+  const dataJson = JSON.stringify({ tx: d.tx || [], today, sig: d.sig || '' }).replace(/</g, '\\u003c');
 
   const body = `<div class="wrap">
     <div class="head">
       <div class="brand"><div class="logo">💰</div><div><h1>Finance</h1><div class="sub">${esc(today)} · <span class="mono">${esc(m.label)}</span></div></div></div>
-      <div class="pill">₹ figures · USD card @ 99.40 · click cards to drill in</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <div class="live"><span class="ld"></span>live · <span id="clock" class="tnum">--:--:--</span></div>
+        <div class="pill">₹ · USD card @ 99.40 · click to drill in</div>
+      </div>
     </div>
 
     <div class="hero">
@@ -389,6 +397,18 @@ const CLIENT_JS = String.raw`(function(){
     openM(title,sub,rows||[]);
   }
   document.addEventListener('click',function(e){var el=e.target.closest('[data-drill]');if(!el)return;e.preventDefault();drill(el.getAttribute('data-drill'));});
+
+  // --- live: ticking clock + refresh-on-change (checked every second) ---
+  function tick(){var d=new Date(),c=document.getElementById('clock');if(c)c.textContent=[d.getHours(),d.getMinutes(),d.getSeconds()].map(function(n){return (n<10?'0':'')+n;}).join(':');}
+  tick();setInterval(tick,1000);
+  try{var sy=sessionStorage.getItem('fa_sy');if(sy){window.scrollTo(0,+sy);sessionStorage.removeItem('fa_sy');}}catch(e){}
+  var SIG=(D&&D.sig)||'';
+  setInterval(function(){
+    if(document.hidden||ov.style.display==='flex')return;
+    fetch('/pulse',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(j){
+      if(j&&j.sig&&j.sig!==SIG){try{sessionStorage.setItem('fa_sy',String(window.scrollY));}catch(e){}location.reload();}
+    }).catch(function(){});
+  },1000);
 })();`;
 
 export function renderLogin(error = '') {
