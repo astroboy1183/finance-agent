@@ -103,7 +103,12 @@ export default {
       const sender = p.from || p.sender || p.address || p.originator || p.number || '';
       let ts = Number(p.sentStamp || p.timestamp || p.time || p.ts || 0);
       ts = ts > 1e12 ? Math.floor(ts / 1000) : (ts || Math.floor(Date.now() / 1000));
-      if (!text) return Response.json({ ok: false, error: 'no text field' }, { status: 400 });
+      if (!text) {
+        // record the request anyway so a misconfigured body is still visible in /sms/raw
+        await env.DB.prepare('INSERT OR IGNORE INTO sms_raw(id,ts,sender,body,parsed,note) VALUES(?,?,?,?,0,?)')
+          .bind('sms-empty-' + ts + '-' + (raw.length), ts, sender || '', raw.slice(0, 400), 'no-text').run();
+        return Response.json({ ok: false, error: 'no text field', received: raw.slice(0, 200) });
+      }
       return Response.json({ ok: true, ...(await handleSms(env, { sender, text, ts })) });
     }
     // Inspect recently forwarded SMS (to tune the parser)
