@@ -4,6 +4,8 @@ import { ingest } from './ingest.js';
 import { handleSms } from './sms.js';
 import { checkBills, billsStatus } from './bills.js';
 import { syncRecurringBills } from './recurring.js';
+import { syncBillDates } from './billdates.js';
+import { categorizeUnknowns } from './autocat.js';
 import { recentRawSms } from './ledger.js';
 import { morningReport, weeklyReport, monthlyReport } from './reports.js';
 import { handleSlackEvent } from './chat.js';
@@ -122,9 +124,16 @@ export default {
       const skipChecks = url.searchParams.get('nochecks') === '1';
       return Response.json(await ingest(env, { days, after, before, skipChecks }));
     }
-    // Re-learn recurring bills/subscriptions from the ledger (Claude-judged).
+    // Re-learn recurring bills from the ledger (Claude-judged), then read merchant
+    // emails for real renewal/expiry dates.
     if (path === '/bills/sync' && url.searchParams.get('key') === env.INGEST_KEY) {
-      return Response.json(await syncRecurringBills(env));
+      const learned = await syncRecurringBills(env);
+      const dated = await syncBillDates(env);
+      return Response.json({ learned, dated });
+    }
+    // Categorise the current backlog of unknown merchants (Claude-learned).
+    if (path === '/categorize' && url.searchParams.get('key') === env.INGEST_KEY) {
+      return Response.json(await categorizeUnknowns(env));
     }
     if (path === '/report' && url.searchParams.get('key') === env.INGEST_KEY) {
       const t = url.searchParams.get('type');
@@ -194,9 +203,11 @@ export default {
     if (await alertOnce(env.DB, `rep-morning:${day}`)) await morningReport(env);
     if (D === 1 && await alertOnce(env.DB, `rep-monthly:${mLabel}`)) await monthlyReport(env);
     if (dow === 0 && await alertOnce(env.DB, `rep-weekly:${day}`)) await weeklyReport(env);
-    // Weekly: re-learn recurring bills from the ledger so the list self-maintains.
+    // Weekly: re-learn recurring bills from the ledger, then read merchant emails
+    // for real renewal dates — the bills list self-maintains.
     if (dow === 0 && await alertOnce(env.DB, `bills-sync:${day}`)) {
       try { await syncRecurringBills(env); } catch (e) { console.log('recurring', String(e)); }
+      try { await syncBillDates(env); } catch (e) { console.log('billdates', String(e)); }
     }
   },
 };

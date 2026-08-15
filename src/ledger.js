@@ -129,13 +129,14 @@ export async function listBills(db) {
   const r = await db.prepare('SELECT * FROM bills WHERE active=1 ORDER BY due_day').all();
   return r.results || [];
 }
-export async function upsertBill(db, { id, name, match_str, amount, due_day, category, kind }) {
+export async function upsertBill(db, { id, name, match_str, amount, due_day, category, kind, next_due }) {
   await db.prepare(
-    `INSERT INTO bills(id,name,match_str,amount,due_day,category,kind,active,created_at) VALUES(?,?,?,?,?,?,?,1,?)
+    `INSERT INTO bills(id,name,match_str,amount,due_day,category,kind,next_due,active,created_at) VALUES(?,?,?,?,?,?,?,?,1,?)
      ON CONFLICT(id) DO UPDATE SET name=excluded.name, match_str=COALESCE(excluded.match_str,bills.match_str),
-       amount=excluded.amount, due_day=excluded.due_day, category=COALESCE(excluded.category,bills.category),
-       kind=COALESCE(excluded.kind,bills.kind), active=1`,
-  ).bind(id, name, match_str || null, amount ?? null, due_day ?? null, category || null, kind || null, now()).run();
+       amount=COALESCE(excluded.amount,bills.amount), due_day=COALESCE(excluded.due_day,bills.due_day),
+       category=COALESCE(excluded.category,bills.category), kind=COALESCE(excluded.kind,bills.kind),
+       next_due=COALESCE(excluded.next_due,bills.next_due), active=1`,
+  ).bind(id, name, match_str || null, amount ?? null, due_day ?? null, category || null, kind || null, next_due || null, now()).run();
 }
 export async function deactivateBill(db, id) {
   const r = await db.prepare('UPDATE bills SET active=0 WHERE id=?').bind(id).run();

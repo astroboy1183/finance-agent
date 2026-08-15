@@ -239,11 +239,39 @@ export function renderDashboard(d) {
     return `<div class="row" data-drill="merch:${esc(bl.name)}"><span class="who"><span class="dot" style="background:${col};color:${col}"></span>${esc(bl.name)}${autoTag} <span class="tag">${bl.amount ? inr(bl.amount) : ''} · ${lbl}</span></span><span class="amt" style="color:${col}">${right}</span></div>`;
   }).join('') || '<div class="tag">no bills tracked yet — add one in chat: <b>add bill rent 16000 due 9</b></div>';
 
+  // --- forecast + smart insights, computed from the ledger (d.tx ~ 120 days) ---
+  const txAll = d.tx || [];
+  const [yy, mmn] = today.split('-').map(Number);
+  const dNow = +today.slice(8, 10);
+  const dim = new Date(Date.UTC(yy, mmn, 0)).getUTCDate();
+  const ymNow = today.slice(0, 7);
+  const prevYm = mmn === 1 ? `${yy - 1}-12` : `${yy}-${String(mmn - 1).padStart(2, '0')}`;
+  const sumMonth = (ym) => txAll.filter((t) => t.dir === 'd' && t.d.slice(0, 7) === ym).reduce((s, t) => s + t.a, 0);
+  const mtd = sumMonth(ymNow), prevTot = sumMonth(prevYm);
+  const projected = dNow > 0 ? Math.round((mtd / dNow) * dim) : mtd;
+  const projPct = prevTot > 0 ? Math.round(((projected - prevTot) / prevTot) * 100) : null;
+  const catMonth = (ym) => { const o = {}; for (const t of txAll) if (t.dir === 'd' && t.d.slice(0, 7) === ym) o[t.c || 'other'] = (o[t.c || 'other'] || 0) + t.a; return o; };
+  const priorYms = [1, 2, 3].map((k) => new Date(Date.UTC(yy, mmn - 1 - k, 1)).toISOString().slice(0, 7));
+  const curCat = catMonth(ymNow), priorCat = priorYms.map(catMonth);
+  let anom = null;
+  for (const c of Object.keys(curCat)) {
+    if (c === 'income' || c === 'transfer' || c === 'uncategorized') continue;
+    const hist = priorCat.map((o) => o[c] || 0).filter((v) => v > 0);
+    if (hist.length < 2) continue;
+    const avg = hist.reduce((s, v) => s + v, 0) / hist.length;
+    if (avg < 500) continue;
+    const pct = Math.round(((curCat[c] - avg) / avg) * 100);
+    if (pct >= 40 && (!anom || pct > anom.pct)) anom = { c, pct, cur: curCat[c] };
+  }
+  const commit = (d.bills || []).reduce((s, x) => s + (x.amount || 0), 0);
+
   const ins = [];
+  ins.push(['🔮', `On pace for ~<b>${inr(projected)}</b> this month — <b>${inr(mtd)}</b> spent so far${projPct !== null ? `, <b>${Math.abs(projPct)}% ${projPct >= 0 ? 'above' : 'below'}</b> last month` : ''}.`]);
+  if (anom) ins.push(['🚨', `<b>${cap(anom.c)}</b> is <b>${anom.pct}% above</b> your 3-month average — <b>${inr(anom.cur)}</b> this month.`]);
+  if (commit > 0) ins.push(['🔁', `Recurring commitments ~<b>${inr(commit)}</b>/mo across <b>${(d.bills || []).length}</b> bills & subscriptions.`]);
   if (momPct !== null) ins.push([momPct >= 0 ? '📈' : '📉', `Spent <b>${inr(m.spent)}</b> — <b>${Math.abs(momPct)}% ${momPct >= 0 ? 'more' : 'less'}</b> than the ${prevLabel}.`]);
   if (catsAll[0]) ins.push(['🏷️', `<b>${cap(catsAll[0].category)}</b> is your top category — <b>${topShare}%</b> of ${plabel} spend.`]);
   if (m.rate !== null) ins.push([m.rate >= 0 ? '💰' : '⚠️', `You kept <b>${m.rate}%</b> of income — <b>${inr(m.net)}</b> net over the ${plabel}.`]);
-  else ins.push(['📊', `Averaging <b>${inr(perDay)}</b>/day over the ${plabel}.`]);
   const insightCards = ins.slice(0, 3).map((x) => `<div class="insight"><span class="ico">${x[0]}</span><span class="tx">${x[1]}</span></div>`).join('');
   const momTag = momPct === null ? '' : `<span class="delta ${momPct >= 0 ? 'up' : 'down'}">${momPct >= 0 ? '▲' : '▼'} ${Math.abs(momPct)}% vs ${prevLabel}</span>`;
 

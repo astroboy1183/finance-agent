@@ -14,12 +14,22 @@ function dueDateEpoch(dueDay, now) {
   return istToEpoch(y, m, Math.min(dueDay, dim), 10, 0, 0);
 }
 
+// Prefer an explicit next_due read from a merchant email; fall back to the
+// day-of-month estimate learned from payment history.
+function dueEpoch(bl, now) {
+  if (bl.next_due && /^\d{4}-\d{2}-\d{2}$/.test(bl.next_due)) {
+    const [y, m, d] = bl.next_due.split('-').map(Number);
+    return istToEpoch(y, m, d, 10, 0, 0);
+  }
+  return dueDateEpoch(bl.due_day, now);
+}
+
 export async function billsStatus(env) {
   const db = env.DB, now = nowEpoch(), mtd = thisMonth(now);
   const out = [];
   for (const bl of await listBills(db)) {
     const paid = await billPaidBetween(db, bl, mtd.from, now + 1);
-    const daysUntil = Math.round((dueDateEpoch(bl.due_day, now) - now) / DAY);
+    const daysUntil = Math.round((dueEpoch(bl, now) - now) / DAY);
     let status = 'upcoming';
     if (paid) status = 'paid';
     else if (daysUntil < 0) status = 'overdue';
@@ -42,7 +52,7 @@ export async function checkBills(env) {
         await upsertBill(db, { id: bl.id, name: bl.name, match_str: bl.match_str, amount: Math.round(paid.amount), due_day: bl.due_day, category: bl.category });
       continue; // already paid this month
     }
-    const daysUntil = Math.round((dueDateEpoch(bl.due_day, now) - now) / DAY);
+    const daysUntil = Math.round((dueEpoch(bl, now) - now) / DAY);
     const amt = bl.amount ? ` — ${inr(bl.amount)}` : '';
     if (daysUntil < 0) {
       if (await alertOnce(db, `bill-over:${bl.id}:${month}`))

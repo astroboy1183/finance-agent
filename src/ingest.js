@@ -6,6 +6,7 @@ import { parseAlert, parseCardAutopay, istParts } from './parser.js';
 import { categorize } from './categorize.js';
 import { insertTxns, getOverrides, upsertSubscription, setMeta } from './ledger.js';
 import { runChecks } from './anomaly.js';
+import { categorizeUnknowns } from './autocat.js';
 import { USD_INR } from './timeutil.js';
 
 export async function ingest(env, { days = 2, after, before, skipChecks = false } = {}) {
@@ -63,6 +64,8 @@ export async function ingest(env, { days = 2, after, before, skipChecks = false 
 
   if (rows.length && !skipChecks) {
     try { await runChecks(env, rows); } catch (e) { console.log('checks failed', String(e)); }
+    // Learn categories for any newly-seen unknown merchants (skipped on backfills).
+    try { await categorizeUnknowns(env); } catch (e) { console.log('autocat failed', String(e)); }
   }
   return { scanned: ids.length, parsed: txns.length, inserted, subs: subs.length };
 }

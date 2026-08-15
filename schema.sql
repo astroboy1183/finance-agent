@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS bills ( -- recurring bills to remind about (paid = ma
   due_day    INTEGER,            -- day of month it's due (1-31)
   category   TEXT,
   kind       TEXT DEFAULT 'bill', -- 'bill' = you actively pay (recharge/utility); 'subscription' = auto-debits
+  next_due   TEXT,               -- YYYY-MM-DD read from a merchant email; overrides the due_day estimate
   active     INTEGER DEFAULT 1,
   created_at INTEGER
 );
