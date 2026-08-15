@@ -124,6 +124,8 @@ a{color:var(--blue);text-decoration:none}
 
 form{max-width:340px;margin:16vh auto;text-align:center}
 input{width:100%;padding:14px;border-radius:14px;border:1px solid var(--brd);background:var(--glass);color:var(--text);font-size:15px;margin:14px 0;backdrop-filter:blur(12px)}
+.axsel{width:100%;padding:14px;border-radius:14px;border:1px solid var(--brd);background:var(--glass);color:var(--text);font-size:15px;margin:2px 0;backdrop-filter:blur(12px)}
+.axsel option{background:#191634;color:var(--text)}
 button{width:100%;padding:14px;border-radius:14px;border:0;background:linear-gradient(120deg,var(--teal),var(--blue),var(--purple));color:#0a0a1a;font-weight:750;font-size:15px;cursor:pointer;box-shadow:0 10px 30px -8px rgba(96,165,250,.5)}
 .err{color:var(--red);font-size:13px}
 `;
@@ -280,7 +282,7 @@ export function renderDashboard(d) {
   const body = `<div class="wrap">
     <div class="head">
       <div class="brand"><div class="logo">💸</div><div><h1>Finance</h1><div class="sub">${esc(today)} · <span class="mono">${esc(plabel)}</span></div></div></div>
-      <div class="chips"><div class="live"><span class="ld"></span>live · <span id="clock" class="tnum">--:--:--</span></div><button id="refresh" class="rbtn" title="Scan email + SMS right now">⟳ Refresh</button><div class="pill">₹ · click to drill in</div></div>
+      <div class="chips"><div class="live"><span class="ld"></span>live · <span id="clock" class="tnum">--:--:--</span></div><button id="addx" class="rbtn" title="Log a cash / wallet spend">＋ Add</button><button id="refresh" class="rbtn" title="Scan email + SMS right now">⟳ Refresh</button><div class="pill">₹ · click to drill in</div></div>
     </div>
 
     <div class="periods">${periodPills}</div>
@@ -338,6 +340,22 @@ export function renderDashboard(d) {
     </div>
   </div>
   <div class="hint">click any card, bar or day to see the transactions · hover charts for details</div>
+  <div class="ov" id="addov"><div class="modal" style="width:min(430px,96vw)"><div style="padding:22px 22px 24px">
+    <div class="mtitle" style="font-size:17px">Add a cash / wallet spend</div>
+    <div class="msub" style="margin-bottom:6px">For spends that never hit Axis (cash, pre-loaded wallet balance)</div>
+    <input id="ax_amt" type="number" inputmode="decimal" placeholder="Amount ₹" autocomplete="off" />
+    <input id="ax_note" type="text" placeholder="What for? (e.g. chai, auto, groceries)" autocomplete="off" />
+    <select id="ax_cat" class="axsel">
+      <option value="cash">cash</option><option value="food">food</option><option value="groceries">groceries</option>
+      <option value="travel">travel</option><option value="shopping">shopping</option><option value="health">health</option>
+      <option value="entertainment">entertainment</option><option value="recharge">recharge</option>
+      <option value="transfer">transfer</option><option value="other">other</option>
+    </select>
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button id="ax_cancel" class="rbtn" style="flex:1;padding:12px">Cancel</button>
+      <button id="ax_save" class="rbtn" style="flex:1;padding:12px;color:var(--text);border-color:rgba(167,139,250,.55)">Add spend</button>
+    </div>
+  </div></div></div>
   <script>window.__D=${dataJson}</script>
   <script>${CLIENT_JS}</script>`;
   return page('Finance', body);
@@ -398,7 +416,24 @@ const CLIENT_JS = String.raw`(function(){
       setTimeout(function(){rb.textContent='⟳ Refresh';rb.disabled=false;},1800);
     }).catch(function(){rb.textContent='⟳ Refresh';rb.disabled=false;});
   });
-  setInterval(function(){if(document.hidden||ov.style.display==='flex')return;fetch('/pulse',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(j){if(j&&j.sig&&j.sig!==SIG){try{sessionStorage.setItem('fa_sy',String(window.scrollY));}catch(e){}location.reload();}}).catch(function(){});},1000);
+  var axov=document.getElementById('addov'),axSave=document.getElementById('ax_save');
+  function axClose(){axov.style.display='none';}
+  var addBtn=document.getElementById('addx');
+  if(addBtn)addBtn.addEventListener('click',function(){axov.style.display='flex';var a=document.getElementById('ax_amt');a.value='';document.getElementById('ax_note').value='';setTimeout(function(){a.focus();},30);});
+  var axCancel=document.getElementById('ax_cancel');if(axCancel)axCancel.addEventListener('click',axClose);
+  if(axov)axov.addEventListener('click',function(e){if(e.target===axov)axClose();});
+  if(axSave)axSave.addEventListener('click',function(){
+    var amt=parseFloat(document.getElementById('ax_amt').value);
+    if(!(amt>0)){document.getElementById('ax_amt').focus();return;}
+    var note=document.getElementById('ax_note').value.trim()||'Cash',cat=document.getElementById('ax_cat').value||'cash';
+    axSave.disabled=true;axSave.textContent='Adding…';
+    fetch('/add',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({amount:amt,note:note,category:cat})})
+      .then(function(r){return r.ok?r.json():null;}).then(function(j){
+        if(j&&j.ok){try{sessionStorage.setItem('fa_sy',String(window.scrollY));}catch(e){}location.reload();}
+        else{axSave.disabled=false;axSave.textContent='Add spend';}
+      }).catch(function(){axSave.disabled=false;axSave.textContent='Add spend';});
+  });
+  setInterval(function(){if(document.hidden||ov.style.display==='flex'||(axov&&axov.style.display==='flex'))return;fetch('/pulse',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(j){if(j&&j.sig&&j.sig!==SIG){try{sessionStorage.setItem('fa_sy',String(window.scrollY));}catch(e){}location.reload();}}).catch(function(){});},1000);
 })();`;
 
 export function renderLogin(error = '') {

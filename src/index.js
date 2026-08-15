@@ -13,7 +13,7 @@ import { verifySlack } from './slack.js';
 import { renderDashboard, renderLogin } from './dashboard.js';
 import {
   sumAmount, byCategory, topMerchants, listTxns, dailyTotals, listSubscriptions,
-  getMeta, alertOnce, biggestDebit, monthlyTotals, channelSplit, upiTypeSplit, sizeBuckets, dataSignature,
+  getMeta, alertOnce, biggestDebit, monthlyTotals, channelSplit, upiTypeSplit, sizeBuckets, dataSignature, addManual,
 } from './ledger.js';
 import { thisMonth, prevMonth, lastDays, istDay, nowEpoch, daysInMonthSoFar } from './timeutil.js';
 
@@ -157,6 +157,19 @@ export default {
         { ok: true, inserted: r.inserted || 0, sig: await dataSignature(env.DB) },
         { headers: { 'cache-control': 'no-store' } },
       );
+    }
+
+    // Manual quick-add (dashboard "+ Add"): logs cash / wallet-balance spends that
+    // never hit Axis — the one coverage gap after email + SMS.
+    if (path === '/add' && request.method === 'POST') {
+      if (getCookie(request, 'fa') !== (await cookieToken(env))) return new Response('forbidden', { status: 403 });
+      const body = await request.json().catch(() => ({}));
+      const amount = Math.round(Number(body.amount) * 100) / 100;
+      if (!(amount > 0)) return Response.json({ error: 'amount must be > 0' }, 400);
+      const note = String(body.note || 'Cash').trim().slice(0, 80) || 'Cash';
+      const category = String(body.category || 'cash').trim().toLowerCase().slice(0, 24) || 'cash';
+      await addManual(env.DB, { amount, note, category, ts: nowEpoch() });
+      return Response.json({ ok: true, sig: await dataSignature(env.DB) }, { headers: { 'cache-control': 'no-store' } });
     }
 
     // Dashboard + login
