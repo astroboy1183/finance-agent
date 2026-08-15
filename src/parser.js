@@ -152,6 +152,20 @@ export function parseCardAutopay(msg) {
 // pass tuned to common Axis SMS shapes; refine against real samples. Catches the
 // card charges (Udemy, international) that email never sends. Returns partial —
 // the ingester fills ts/category and cross-source-dedupes against email.
+// UPI-autopay mandate reminders are the only record of these recurring debits
+// (Axis sends no completed-charge alert). "For the upcoming mandate set for
+// 12-05-26, INR 780.00 will be debited from your A/c towards UdemyIndiaLLP for
+// Udemy Subscription" → book a debit on that date. Returns null otherwise.
+export function parseMandate(text) {
+  const s = clean(text);
+  const m = s.match(/upcoming mandate set for\s+(\d{2})-(\d{2})-(\d{2,4}),?\s*INR\s*([\d,]+(?:\.\d{1,2})?)\s*will be debited[^]*?towards\s+([A-Za-z0-9 .&'-]+?)\s+(?:for\b|,|-\s*Axis|$)/i);
+  if (!m) return null;
+  const yy = m[3].length === 2 ? 2000 + +m[3] : +m[3];
+  const amount = toNum(m[4]);
+  if (!(amount > 0)) return null;
+  return { merchant: clean(m[5]), amount, ts: istToEpoch(yy, +m[2], +m[1], 12, 0, 0), kind: 'mandate' };
+}
+
 export function parseSms(text) {
   const s = (text || '').replace(/\r/g, '');
   if (!s.trim()) return null;
