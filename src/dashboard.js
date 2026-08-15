@@ -40,6 +40,11 @@ a{color:var(--blue);text-decoration:none}
 .chips{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .pill,.live{color:var(--dim);font-size:11.5px;border:1px solid var(--brd);border-radius:999px;padding:7px 13px;background:var(--glass);backdrop-filter:blur(12px)}
 .live{display:flex;align-items:center;gap:8px}.live .ld{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green);animation:pulse 1.7s infinite}
+.periods{display:flex;gap:9px;margin-bottom:20px;flex-wrap:wrap;align-items:center}
+.periods .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-right:2px}
+.pp{font-size:12.5px;color:var(--dim);border:1px solid var(--brd);border-radius:999px;padding:8px 17px;background:var(--glass);backdrop-filter:blur(12px);cursor:pointer;transition:all .14s;text-decoration:none;font-weight:600}
+.pp:hover{color:var(--text);border-color:rgba(167,139,250,.45);transform:translateY(-1px)}
+.pp.on{color:#0a0a1a;background:linear-gradient(120deg,var(--teal),var(--blue),var(--purple));border-color:transparent;box-shadow:0 8px 22px -6px rgba(96,165,250,.55)}
 .live #clock{color:var(--text)}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(52,211,153,.6)}70%{box-shadow:0 0 0 8px rgba(52,211,153,0)}100%{box-shadow:0 0 0 0 rgba(52,211,153,0)}}
 
@@ -137,9 +142,9 @@ function sparkline(vals, w = 260, h = 50) {
   return `<svg class="svgw" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="spk" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${C_SPEND}" stop-opacity=".45"/><stop offset="1" stop-color="${C_SPEND}" stop-opacity="0"/></linearGradient></defs><path d="M0,${h} L${pts.join(' L')} L${w},${h} Z" fill="url(#spk)"/><path d="M${pts.join(' L')}" fill="none" stroke="${C_SPEND}" stroke-width="2.5" stroke-linejoin="round"/></svg>`;
 }
 
-// area trend (gradient fill + glowing line) — 60 days
-function trend(map, today) {
-  const days = []; for (let i = 59; i >= 0; i--) days.push(addDays(today, -i));
+// area trend (gradient fill + glowing line) over N days
+function trend(map, today, n = 60) {
+  const days = []; for (let i = n - 1; i >= 0; i--) days.push(addDays(today, -i));
   const vals = days.map((d) => map[d] || 0);
   const W = 780, H = 230, L = 46, R = 16, T = 18, B = 26, pw = W - L - R, ph = H - T - B, ymax = niceMax(Math.max(1, ...vals));
   const X = (i) => L + (i / (days.length - 1)) * pw, Y = (v) => T + ph - (v / ymax) * ph;
@@ -168,7 +173,7 @@ function monthlyBars(months) {
 function donut(segs, total) {
   const size = 170, w = 27, r = (size - w) / 2, C = 2 * Math.PI * r, cx = size / 2; let off = 0, rings = '';
   segs.forEach((s) => { const f = total > 0 ? s.value / total : 0, len = Math.max(0, f * C - 3); rings += `<circle ${s.drill ? `data-drill="${s.drill}"` : ''} cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="${s.color}" stroke-width="${w}" stroke-dasharray="${len.toFixed(1)} ${(C - len).toFixed(1)}" stroke-dashoffset="${(-off * C).toFixed(1)}" transform="rotate(-90 ${cx} ${cx})" style="filter:drop-shadow(0 0 6px ${s.color}88)"><title>${esc(s.label)}: ${inr(s.value)}</title></circle>`; off += f; });
-  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="Category breakdown">${rings}<text x="${cx}" y="${cx - 5}" text-anchor="middle" fill="var(--dim)" font-size="10" letter-spacing=".06em" pointer-events="none">SPENT 30D</text><text x="${cx}" y="${cx + 16}" text-anchor="middle" fill="var(--text)" font-size="18" font-weight="760" class="tnum" pointer-events="none">${short(total)}</text></svg>`;
+  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="Category breakdown">${rings}<text x="${cx}" y="${cx - 5}" text-anchor="middle" fill="var(--dim)" font-size="10" letter-spacing=".06em" pointer-events="none">SPENT</text><text x="${cx}" y="${cx + 16}" text-anchor="middle" fill="var(--text)" font-size="18" font-weight="760" class="tnum" pointer-events="none">${short(total)}</text></svg>`;
 }
 
 function hbars(rows) {
@@ -178,22 +183,20 @@ function hbars(rows) {
 
 // ---- page ------------------------------------------------------------------
 export function renderDashboard(d) {
-  const today = d.generatedIst, m = d.month;
+  const today = d.generatedIst, m = d.period, days = d.days;
   const map = {}; for (const r of d.dailyDebit) map[r.day_ist] = r.s;
-  const daysInMonth = new Date(Date.UTC(+today.slice(0, 4), +today.slice(5, 7), 0)).getUTCDate();
-  const perDay = m.daysSoFar ? m.spent / m.daysSoFar : 0, projected = perDay * daysInMonth;
-  const avgTxn = m.count ? m.spent / m.count : 0;
-  const monthDays = Object.keys(map).filter((k) => k.slice(0, 7) === m.label);
-  const noSpend = Math.max(0, m.daysSoFar - monthDays.filter((k) => map[k] > 0).length);
-  let bigDay = { day: '—', s: 0 }; for (const k of monthDays) if ((map[k] || 0) > bigDay.s) bigDay = { day: k, s: map[k] };
+  const perDay = m.perDay, avgTxn = m.count ? m.spent / m.count : 0;
+  const momPct = m.prevSpent > 0 ? Math.round((m.spent / m.prevSpent - 1) * 100) : null;
   const recur = d.subs.reduce((a, s) => a + (s.currency === 'INR' ? s.amount : s.amount * 99.4024), 0);
   const spark30 = []; for (let i = 29; i >= 0; i--) spark30.push(map[addDays(today, -i)] || 0);
-
-  const pm = m.label.split('-').map(Number); let py = pm[0], pmo = pm[1] - 1; if (pmo === 0) { pmo = 12; py--; }
-  const lastYM = `${py}-${p2(pmo)}`;
-  let sameLast = 0; for (let dd = 1; dd <= m.daysSoFar; dd++) sameLast += map[`${lastYM}-${p2(dd)}`] || 0;
-  const momSame = sameLast > 0 ? Math.round((m.spent / sameLast - 1) * 100) : null;
-  const projVsLast = m.prevSpent > 0 ? Math.round((projected / m.prevSpent - 1) * 100) : null;
+  const plabel = m.label, pshort = days >= 3650 ? 'all' : days === 365 ? '1y' : days + 'd';
+  const prevLabel = days >= 3650 ? 'period' : `previous ${days} days`;
+  // biggest day + no-spend over the period (bounded by available daily data)
+  const winN = Math.min(days, 365), periodDays = [];
+  for (let i = winN - 1; i >= 0; i--) periodDays.push(addDays(today, -i));
+  let bigDay = { day: '—', s: 0 }; for (const k of periodDays) if ((map[k] || 0) > bigDay.s) bigDay = { day: k, s: map[k] };
+  const noSpend = Math.max(0, periodDays.length - periodDays.filter((k) => map[k] > 0).length);
+  const periodPills = '<span class="lbl">period</span>' + d.periods.map((p) => `<a href="/?d=${p}" class="pp${p === days ? ' on' : ''}">${p >= 3650 ? 'All' : p === 365 ? '1y' : p + 'd'}</a>`).join('');
 
   const catsAll = d.categories, catTot = catsAll.reduce((a, c) => a + c.s, 0), top7 = catsAll.slice(0, 7);
   const topShare = catTot > 0 && catsAll[0] ? Math.round((catsAll[0].s / catTot) * 100) : 0;
@@ -220,37 +223,38 @@ export function renderDashboard(d) {
   const donutLegend = segs.map((s) => `<div class="it" ${s.drill ? `data-drill="${s.drill}"` : ''}><span class="sw" style="background:${s.color};color:${s.color}"></span><b>${esc(s.label)}</b><span class="n">${short(s.value)} · ${Math.round((s.value / catTot) * 100)}%</span></div>`).join('');
 
   const ins = [];
-  if (momSame !== null) ins.push([momSame >= 0 ? '📈' : '📉', `Spent <b>${inr(m.spent)}</b> so far — <b>${Math.abs(momSame)}% ${momSame >= 0 ? 'more' : 'less'}</b> than by day ${m.daysSoFar} last month.`]);
-  if (projVsLast !== null) ins.push(['🗓️', `On this pace you'll reach <b>${inr(projected)}</b> — <b>${Math.abs(projVsLast)}% ${projVsLast >= 0 ? 'above' : 'below'}</b> last month's ${inr(m.prevSpent)}.`]);
-  else ins.push(['🗓️', `At this pace you'll spend <b>${inr(projected)}</b> by month-end.`]);
-  if (catsAll[0]) ins.push(['🏷️', `<b>${cap(catsAll[0].category)}</b> is your top category — <b>${topShare}%</b> of 30-day spend.`]);
+  if (momPct !== null) ins.push([momPct >= 0 ? '📈' : '📉', `Spent <b>${inr(m.spent)}</b> — <b>${Math.abs(momPct)}% ${momPct >= 0 ? 'more' : 'less'}</b> than the ${prevLabel}.`]);
+  if (catsAll[0]) ins.push(['🏷️', `<b>${cap(catsAll[0].category)}</b> is your top category — <b>${topShare}%</b> of ${plabel} spend.`]);
+  if (m.rate !== null) ins.push([m.rate >= 0 ? '💰' : '⚠️', `You kept <b>${m.rate}%</b> of income — <b>${inr(m.net)}</b> net over the ${plabel}.`]);
+  else ins.push(['📊', `Averaging <b>${inr(perDay)}</b>/day over the ${plabel}.`]);
   const insightCards = ins.slice(0, 3).map((x) => `<div class="insight"><span class="ico">${x[0]}</span><span class="tx">${x[1]}</span></div>`).join('');
-  const momTag = momSame === null ? '' : `<span class="delta ${momSame >= 0 ? 'up' : 'down'}">${momSame >= 0 ? '▲' : '▼'} ${Math.abs(momSame)}% vs last month</span>`;
+  const momTag = momPct === null ? '' : `<span class="delta ${momPct >= 0 ? 'up' : 'down'}">${momPct >= 0 ? '▲' : '▼'} ${Math.abs(momPct)}% vs ${prevLabel}</span>`;
 
   const dataJson = JSON.stringify({ tx: d.tx || [], today, sig: d.sig || '' }).replace(/</g, '\\u003c');
 
   const body = `<div class="wrap">
     <div class="head">
-      <div class="brand"><div class="logo">💸</div><div><h1>Finance</h1><div class="sub">${esc(today)} · <span class="mono">${esc(m.label)}</span></div></div></div>
+      <div class="brand"><div class="logo">💸</div><div><h1>Finance</h1><div class="sub">${esc(today)} · <span class="mono">${esc(plabel)}</span></div></div></div>
       <div class="chips"><div class="live"><span class="ld"></span>live · <span id="clock" class="tnum">--:--:--</span></div><div class="pill">₹ · click to drill in</div></div>
     </div>
 
+    <div class="periods">${periodPills}</div>
+
     <div class="hero">
-      <div class="card" data-drill="monthall">
-        <div class="k">Net saved · this month</div>
+      <div class="card" data-drill="win:${days}">
+        <div class="k">Net · ${esc(plabel)}</div>
         <div class="hero-net ${m.net >= 0 ? '' : 'neg'}">${inr(m.net)}</div>
         <div class="hero-sub">${m.rate !== null ? `${m.rate}% of ₹${short(m.income)} income kept` : 'income − spend'}</div>
         ${m.rate !== null ? `<div class="meter"><span style="width:${Math.max(2, Math.min(100, m.rate))}%"></span></div>` : ''}
         <div style="margin-top:16px">${sparkline(spark30)}</div><div class="chip" style="margin-top:2px">30-day spend trend</div>
       </div>
-      <div class="card" data-drill="month">
-        <div class="k">Spent · this month</div>
+      <div class="card" data-drill="win:${days}">
+        <div class="k">Spent · ${esc(plabel)}</div>
         <div class="big">${inr(m.spent)} <small>· ${m.count} txns</small></div>${momTag}
-        <div class="chip">Projected <b>${inr(projected)}</b> · avg <b>${inr(perDay)}</b>/day</div>
-        <div class="chip">Day <b>${m.daysSoFar}</b>/${daysInMonth} · <b>${Math.round((m.daysSoFar / daysInMonth) * 100)}%</b> through</div>
+        <div class="chip">Avg <b>${inr(perDay)}</b>/day · biggest <b>${inr(d.biggest ? d.biggest.amount : 0)}</b></div>
       </div>
       <div class="card" data-drill="credits">
-        <div class="k">Income · this month</div>
+        <div class="k">Income · ${esc(plabel)}</div>
         <div class="big greentxt">${inr(m.income)}</div>
         <div class="chip" style="margin-top:14px">Recurring subs ~<b>${inr(recur)}</b>/mo</div>
         <div class="chip">≈ <b>${inr(recur * 12)}</b>/yr committed</div>
@@ -259,11 +263,11 @@ export function renderDashboard(d) {
 
     <div class="insbar">${insightCards}</div>
 
-    <div class="card mb" data-drill="win:60"><h2>Daily spend <span class="r">last 60 days</span></h2>${trend(map, today)}</div>
+    <div class="card mb" data-drill="win:${d.trendDays}"><h2>Daily spend <span class="r">last ${d.trendDays} days</span></h2>${trend(map, today, d.trendDays)}</div>
 
     <div class="grid g2 mb">
-      <div class="card" data-drill="win:30"><h2>By category <span class="r">30 days</span></h2><div class="donutwrap">${donut(segs, catTot)}<div class="lg">${donutLegend}</div></div></div>
-      <div class="card" data-drill="win:30"><h2>Top merchants <span class="r">30 days</span></h2>${merchBars}</div>
+      <div class="card" data-drill="win:${days}"><h2>By category <span class="r">${esc(plabel)}</span></h2><div class="donutwrap">${donut(segs, catTot)}<div class="lg">${donutLegend}</div></div></div>
+      <div class="card" data-drill="win:${days}"><h2>Top merchants <span class="r">${esc(plabel)}</span></h2>${merchBars}</div>
     </div>
 
     <div class="grid g2 mb">
@@ -274,8 +278,8 @@ export function renderDashboard(d) {
     <div class="tiles mb">
       <div class="card tile" data-drill="merch:${esc(d.biggest ? d.biggest.counterparty || '' : '')}"><div class="k">Biggest expense</div><div class="v" style="color:var(--pink)">${d.biggest ? inr(d.biggest.amount) : '—'}</div><div class="t">${d.biggest ? esc(d.biggest.counterparty || '?') : ''}</div></div>
       <div class="card tile" data-drill="day:${esc(bigDay.day)}"><div class="k">Biggest day</div><div class="v" style="color:var(--purple)">${inr(bigDay.s)}</div><div class="t">${esc(bigDay.day)}</div></div>
-      <div class="card tile" data-drill="month"><div class="k">Avg transaction</div><div class="v" style="color:var(--blue)">${inr(avgTxn)}</div><div class="t">${m.count} txns this month</div></div>
-      <div class="card tile" data-drill="month"><div class="k">No-spend days</div><div class="v" style="color:var(--teal)">${noSpend}<small style="font-size:13px;color:var(--muted)"> / ${m.daysSoFar}</small></div><div class="t">days without spending</div></div>
+      <div class="card tile" data-drill="win:${days}"><div class="k">Avg transaction</div><div class="v" style="color:var(--blue)">${inr(avgTxn)}</div><div class="t">${m.count} txns · ${esc(plabel)}</div></div>
+      <div class="card tile" data-drill="win:${days}"><div class="k">No-spend days</div><div class="v" style="color:var(--teal)">${noSpend}<small style="font-size:13px;color:var(--muted)"> / ${periodDays.length}</small></div><div class="t">days without spending</div></div>
     </div>
 
     <div class="grid g2 mb">
