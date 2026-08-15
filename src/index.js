@@ -2,6 +2,7 @@
 // endpoints; scheduled() dispatches the cron jobs by their schedule.
 import { ingest } from './ingest.js';
 import { handleSms } from './sms.js';
+import { checkBills, billsStatus } from './bills.js';
 import { recentRawSms } from './ledger.js';
 import { morningReport, weeklyReport, monthlyReport } from './reports.js';
 import { handleSlackEvent } from './chat.js';
@@ -50,6 +51,7 @@ async function buildDashboardData(env, days) {
     recent: await listTxns(db, { from: lastDays(120, now).from, to: now + 1, limit: 10 }),
     dailyDebit: await dailyTotals(db, { from: span.from, to: now + 1, direction: 'debit' }),
     subs: await listSubscriptions(db),
+    bills: await billsStatus(env),
     income_list: await listTxns(db, { from: lastDays(120, now).from, to: now + 1, direction: 'credit', limit: 6 }),
     monthly: await monthlyTotals(db, { from: lastDays(200, now).from, to: now + 1 }),
     tx: (await listTxns(db, { from: lastDays(dataTxDays, now).from, to: now + 1, limit: 1200 })).map((t) => ({
@@ -171,6 +173,7 @@ export default {
     const dow = new Date(Date.UTC(Y, M - 1, D)).getUTCDay();   // 0 = Sunday
     const mLabel = `${Y}-${String(M).padStart(2, '0')}`;
 
+    try { await checkBills(env); } catch (e) { console.log('bills', String(e)); }
     if (await alertOnce(env.DB, `rep-morning:${day}`)) await morningReport(env);
     if (D === 1 && await alertOnce(env.DB, `rep-monthly:${mLabel}`)) await monthlyReport(env);
     if (dow === 0 && await alertOnce(env.DB, `rep-weekly:${day}`)) await weeklyReport(env);

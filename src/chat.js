@@ -7,8 +7,12 @@ import { send, esc, b, i } from './slack.js';
 import {
   sumAmount, byCategory, listTxns, topMerchants, listSubscriptions,
   addManual, setBudget, getBudgets, setOverride, recategorize, getMeta, setMeta,
+  upsertBill, deactivateBill,
 } from './ledger.js';
+import { billsStatus } from './bills.js';
 import { categorize, merchantKey } from './categorize.js';
+
+const ord = (n) => { const s = ['th', 'st', 'nd', 'rd'], v = n % 100; return s[(v - 20) % 10] || s[v] || s[0]; };
 import { inr, subAmount, yesterday, today, thisMonth, prevMonth, lastWeek, lastDays, nowEpoch } from './timeutil.js';
 
 const HELP = `🤖 ${b('Finance bot — what I can do')}
@@ -25,6 +29,7 @@ Commands:
 • \`budget food 8000\` — set a monthly cap
 • \`categorise swiggy as food\` — fix a category
 • \`subs\` — list subscriptions
+• \`bills\` · \`add bill rent 16000 due 9\` — track bills & due dates
 • \`today\` / \`yesterday\` / \`month\` — quick reports
 • \`help\``;
 
@@ -87,6 +92,29 @@ async function tryCommand(env, text) {
   let m;
   if ((m = text.match(/^\/?(start|help)\b/i))) return HELP;
   if (/^\/?(subs|subscriptions)\b/i.test(text)) return execIntent(env, { intent: 'subscriptions' });
+
+  // bills
+  if (/^\/?bills?\b/i.test(text) && !/^add\s/i.test(text)) {
+    const bills = await billsStatus(env);
+    if (!bills.length) return 'No bills tracked yet. Add one: `add bill rent 16000 due 9`';
+    return `${b('Bills this month')}\n` + bills.map((bl) => {
+      const icon = bl.status === 'paid' ? '✅' : bl.status === 'overdue' ? '🔴' : bl.status === 'due-soon' ? '🟠' : '⚪';
+      const when = bl.status === 'paid' ? `paid ${bl.paidOn || ''}` : bl.status === 'overdue' ? `${-bl.daysUntil}d overdue` : bl.status === 'due-soon' ? (bl.daysUntil === 0 ? 'due today' : `in ${bl.daysUntil}d`) : `due the ${bl.due_day}${ord(bl.due_day)}`;
+      return `  ${icon} ${esc(bl.name)} — ${bl.amount ? inr(bl.amount) : ''} · ${when}`;
+    }).join('\n');
+  }
+  if ((m = text.match(/^add\s+bill\s+(.+?)\s+₹?\s*([\d,]+(?:\.\d+)?)\s+due\s+(\d{1,2})/i))) {
+    const name = m[1].trim(), amount = parseFloat(m[2].replace(/,/g, '')), day = Math.min(31, Math.max(1, parseInt(m[3], 10)));
+    const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const cat = categorize({ direction: 'debit', counterparty: name, counterparty_raw: name, upi_type: null }, null);
+    await upsertBill(db, { id, name, match_str: name.split(/\s+/)[0], amount, due_day: day, category: cat });
+    return `✅ Bill added: ${b(esc(name))} — ${inr(amount)} due the ${day}${ord(day)}. I'll remind you 3 days before + on the day, and mark it paid when the payment shows up.`;
+  }
+  if ((m = text.match(/^remove\s+bill\s+(.+)/i))) {
+    const name = m[1].trim(), id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const n = await deactivateBill(db, id);
+    return n ? `✅ Removed bill “${esc(name)}”.` : `No bill matching “${esc(name)}”.`;
+  }
   if (/^\/?today\b/i.test(text)) return execIntent(env, { intent: 'category_breakdown', period: 'today' });
   if (/^\/?yesterday\b/i.test(text)) return execIntent(env, { intent: 'list_txns', period: 'yesterday' });
   if (/^\/?month\b/i.test(text)) return execIntent(env, { intent: 'category_breakdown', period: 'this_month' });

@@ -54,6 +54,17 @@ CREATE TABLE IF NOT EXISTS alerts_sent ( -- dedup for anomaly/budget pings
   ts INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS bills ( -- recurring bills to remind about (paid = matched live from the ledger)
+  id         TEXT PRIMARY KEY,   -- slug
+  name       TEXT NOT NULL,
+  match_str  TEXT,               -- counterparty substring used to auto-detect payment
+  amount     REAL,               -- typical amount
+  due_day    INTEGER,            -- day of month it's due (1-31)
+  category   TEXT,
+  active     INTEGER DEFAULT 1,
+  created_at INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS sms_raw ( -- every forwarded SMS (audit + parser tuning)
   id     TEXT PRIMARY KEY,
   ts     INTEGER,

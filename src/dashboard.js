@@ -126,6 +126,7 @@ button{width:100%;padding:14px;border-radius:14px;border:0;background:linear-gra
 // ---- helpers ---------------------------------------------------------------
 const p2 = (n) => String(n).padStart(2, '0');
 const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+const ord = (n) => { const s = ['th', 'st', 'nd', 'rd'], v = n % 100; return s[(v - 20) % 10] || s[v] || s[0]; };
 function addDays(s, d) { const [y, m, dd] = s.split('-').map(Number); const t = new Date(Date.UTC(y, m - 1, dd + d)); return `${t.getUTCFullYear()}-${p2(t.getUTCMonth() + 1)}-${p2(t.getUTCDate())}`; }
 const dow = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)).getUTCDay(); };
 const dayIdx = (s) => { const [y, m, d] = s.split('-').map(Number); return Math.floor(Date.UTC(y, m - 1, d) / 86400000); };
@@ -222,6 +223,16 @@ export function renderDashboard(d) {
   const recent = d.recent.map((t) => `<div class="row" data-drill="merch:${esc(t.counterparty || '')}"><span class="who"><span class="dot" style="color:${t.direction === 'credit' ? 'var(--green)' : 'var(--blue)'};background:${t.direction === 'credit' ? 'var(--green)' : 'var(--blue)'}"></span>${esc(t.counterparty || '?')}&nbsp;<span class="tag">${esc(t.ts_ist.slice(5, 16))}</span></span><span class="amt${t.direction === 'credit' ? ' pos' : ''}">${inr(t.amount)}</span></div>`).join('') || '<div class="tag">no data</div>';
   const donutLegend = segs.map((s) => `<div class="it" ${s.drill ? `data-drill="${s.drill}"` : ''}><span class="sw" style="background:${s.color};color:${s.color}"></span><b>${esc(s.label)}</b><span class="n">${short(s.value)} · ${Math.round((s.value / catTot) * 100)}%</span></div>`).join('');
 
+  const STAT = { paid: ['var(--green)', 'paid'], 'due-soon': ['var(--amber)', 'due soon'], overdue: ['var(--red)', 'OVERDUE'], upcoming: ['var(--dim)', 'upcoming'] };
+  const billsCard = (d.bills || []).map((bl) => {
+    const [col, lbl] = STAT[bl.status] || STAT.upcoming;
+    const right = bl.status === 'paid' ? `✓ ${bl.paidOn ? bl.paidOn.slice(5) : 'paid'}`
+      : bl.status === 'overdue' ? `${-bl.daysUntil}d late`
+      : bl.status === 'due-soon' ? (bl.daysUntil === 0 ? 'today' : `in ${bl.daysUntil}d`)
+      : `${bl.due_day}${ord(bl.due_day)}`;
+    return `<div class="row" data-drill="merch:${esc(bl.name)}"><span class="who"><span class="dot" style="background:${col};color:${col}"></span>${esc(bl.name)} <span class="tag">${bl.amount ? inr(bl.amount) : ''} · ${lbl}</span></span><span class="amt" style="color:${col}">${right}</span></div>`;
+  }).join('') || '<div class="tag">no bills tracked yet — add one in chat: <b>add bill rent 16000 due 9</b></div>';
+
   const ins = [];
   if (momPct !== null) ins.push([momPct >= 0 ? '📈' : '📉', `Spent <b>${inr(m.spent)}</b> — <b>${Math.abs(momPct)}% ${momPct >= 0 ? 'more' : 'less'}</b> than the ${prevLabel}.`]);
   if (catsAll[0]) ins.push(['🏷️', `<b>${cap(catsAll[0].category)}</b> is your top category — <b>${topShare}%</b> of ${plabel} spend.`]);
@@ -283,11 +294,14 @@ export function renderDashboard(d) {
     </div>
 
     <div class="grid g2 mb">
-      <div class="card" data-drill="credits"><h2>💰 Income <span class="r">recent</span></h2>${income}</div>
+      <div class="card"><h2>🧾 Bills &amp; due dates <span class="r">this month</span></h2>${billsCard}</div>
       <div class="card" data-drill="win:120"><h2>Subscriptions <span class="r">~${short(recur)}/mo</span></h2>${subs}</div>
     </div>
 
-    <div class="card" data-drill="win:120"><h2>Recent transactions</h2>${recent}</div>
+    <div class="grid g2 mb">
+      <div class="card" data-drill="credits"><h2>💰 Income <span class="r">recent</span></h2>${income}</div>
+      <div class="card" data-drill="win:120"><h2>Recent transactions</h2>${recent}</div>
+    </div>
   </div>
   <div class="hint">click any card, bar or day to see the transactions · hover charts for details</div>
   <script>window.__D=${dataJson}</script>

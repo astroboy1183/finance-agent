@@ -124,6 +124,33 @@ export async function sizeBuckets(db, { from, to }) {
   ).bind(from, to).first();
 }
 
+// ---- bills ------------------------------------------------------------------
+export async function listBills(db) {
+  const r = await db.prepare('SELECT * FROM bills WHERE active=1 ORDER BY due_day').all();
+  return r.results || [];
+}
+export async function upsertBill(db, { id, name, match_str, amount, due_day, category }) {
+  await db.prepare(
+    `INSERT INTO bills(id,name,match_str,amount,due_day,category,active,created_at) VALUES(?,?,?,?,?,?,1,?)
+     ON CONFLICT(id) DO UPDATE SET name=excluded.name, match_str=COALESCE(excluded.match_str,bills.match_str),
+       amount=excluded.amount, due_day=excluded.due_day, category=COALESCE(excluded.category,bills.category), active=1`,
+  ).bind(id, name, match_str || null, amount ?? null, due_day ?? null, category || null, now()).run();
+}
+export async function deactivateBill(db, id) {
+  const r = await db.prepare('UPDATE bills SET active=0 WHERE id=?').bind(id).run();
+  return r.meta?.changes || 0;
+}
+// Has this bill been paid in [from, to)? Matches a debit by counterparty substring
+// and (if an amount is set) a loose amount band. Returns the matching row or null.
+export async function billPaidBetween(db, bill, from, to) {
+  let sql = `SELECT day_ist, amount FROM transactions WHERE ts>=? AND ts<? AND direction='debit' AND currency='INR'`;
+  const b = [from, to];
+  if (bill.match_str) { sql += ' AND LOWER(counterparty) LIKE ?'; b.push(`%${bill.match_str.toLowerCase()}%`); }
+  if (bill.amount) { sql += ' AND amount>=? AND amount<=?'; b.push(bill.amount * 0.5, bill.amount * 1.6); }
+  sql += ' ORDER BY ts DESC LIMIT 1';
+  return await db.prepare(sql).bind(...b).first();
+}
+
 // Cheap signature that changes whenever the ledger changes — powers live refresh.
 export async function dataSignature(db) {
   const r = await db.prepare(
