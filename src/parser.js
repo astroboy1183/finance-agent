@@ -59,7 +59,7 @@ function extractTime(body, internalDateMs) {
 }
 
 function extractInfo(body) {
-  // "Transaction Info: UPI/P2M/222631984403/Idealprepaid India"
+  // "Transaction Info: UPI/P2M/<ref-no>/<Merchant Name>"
   let m = body.match(/Transaction\s*Info:\s*(.+?)(?:\s+If this transaction|\s+Feel free|\s+Call us|\s+To block|\s+\*\*\*\*|$)/i);
   if (m) {
     const raw = m[1].trim();
@@ -72,7 +72,7 @@ function extractInfo(body) {
     return { channel: 'UPI', upi_type: null, ref: null,
              counterparty: raw, counterparty_raw: raw };
   }
-  // NEFT / IMPS / RTGS: "by NEFT/SBIN426216377184/CITA"
+  // NEFT / IMPS / RTGS: "by NEFT/<bank-ref>/<Sender>"
   m = body.match(/by\s+(NEFT|IMPS|RTGS)\/([A-Za-z0-9]+)\/([^\s.]+)/i);
   if (m)
     return { channel: m[1].toUpperCase(), upi_type: null, ref: m[2],

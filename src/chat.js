@@ -22,7 +22,7 @@ Ask me naturally, e.g.:
 • "food spend last 7 days"
 • "show my transactions today"
 • "top merchants this month"
-• "how much to Nandus PG?"
+• "how much on rent this month?"
 
 Commands:
 • \`add 200 cash lunch\` — log a cash spend
