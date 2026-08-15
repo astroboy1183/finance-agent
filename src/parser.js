@@ -152,38 +152,45 @@ export function parseCardAutopay(msg) {
 // pass tuned to common Axis SMS shapes; refine against real samples. Catches the
 // card charges (Udemy, international) that email never sends. Returns partial —
 // the ingester fills ts/category and cross-source-dedupes against email.
-const SMS_AMT = String.raw`(?:INR|Rs\.?)\s*([\d,]+(?:\.\d{1,2})?)`;
 export function parseSms(text) {
-  const s = clean(text);
-  if (!s) return null;
-  // ignore OTPs, promos, balance/limit-only, reminders
-  if (/\b(otp|one[- ]time password|verification code|will expire|expires|pre-?approved|eligible|reward|cashback|% ?off|discount|loan offer|emi offer|upcoming autopay|to be debited|blocked if)\b/i.test(s)) return null;
+  const s = (text || '').replace(/\r/g, '');
+  if (!s.trim()) return null;
+  const flat = s.replace(/\s+/g, ' ').trim();
 
-  const am = s.match(new RegExp(SMS_AMT, 'i'));
-  if (!am) return null;
-  const amount = toNum(am[1]);
+  // Skip anything that isn't a completed money movement: OTPs, mandate setup /
+  // reminders, PIN/security, account linking, promos, statements.
+  if (/\b(otp|one[- ]time password|verification code)\b/i.test(flat)) return null;
+  if (/\b(mandate|will be debited|upcoming|has been successfully created|is being linked|account is being linked|mobile no\.? update|incorrect pin|set the upi pin|security question|one step away|pre-?approved|not interested|apply now|e-?statement|register|reward|cashback|% ?off|loan offer)\b/i.test(flat)) return null;
+
+  // amount + direction
+  let m = flat.match(/INR\s*([\d,]+(?:\.\d{1,2})?)\s*(debited|credited)/i)
+       || flat.match(/(debited|credited)\s*(?:with|by)?\s*INR\s*([\d,]+(?:\.\d{1,2})?)/i);
+  if (!m) return null;
+  let amount, direction;
+  if (/^INR/i.test(m[0])) { amount = toNum(m[1]); direction = m[2]; } else { direction = m[1]; amount = toNum(m[2]); }
   if (!(amount > 0)) return null;
+  direction = /credited/i.test(direction) ? 'credit' : 'debit';
 
-  let direction = null;
-  if (/\b(debited|spent|paid|purchase|withdrawn|deducted)\b/i.test(s)) direction = 'debit';
-  else if (/\b(credited|received|refunded?)\b/i.test(s)) direction = 'credit';
-  if (!direction) return null;
+  const isCard = /BLOCKCARD/i.test(flat) || /on your Axis Bank Card/i.test(flat) || /Auto ?Pay of INR/i.test(flat);
+  let channel = isCard ? 'CARD' : (/UPI\//i.test(s) ? 'UPI' : /NEFT/i.test(flat) ? 'NEFT' : /IMPS/i.test(flat) ? 'IMPS' : /RTGS/i.test(flat) ? 'RTGS' : 'BANK');
+  let counterparty = null, counterparty_raw = null, upi_type = null, ref = null, ts = null;
 
-  const channel = /\b(upi|vpa)\b/i.test(s) ? 'UPI'
-    : /\bcard\b/i.test(s) ? 'CARD'
-    : /\bneft\b/i.test(s) ? 'NEFT' : /\bimps\b/i.test(s) ? 'IMPS' : /\brtgs\b/i.test(s) ? 'RTGS' : 'BANK';
-
-  let counterparty = null, counterparty_raw = null, upi_type = null, ref = null, m;
-  if ((m = s.match(/UPI\/(P2M|P2A|P2P)\/(\w+)\/([A-Za-z0-9 .&'-]+)/i))) {
-    upi_type = m[1].toUpperCase(); ref = m[2]; counterparty_raw = m[3].trim(); counterparty = counterparty_raw.split('/')[0].trim();
-  } else if ((m = s.match(/\b(?:at|to|towards|for|VPA)\s+([A-Za-z0-9@][A-Za-z0-9 @.&'*-]{1,38}?)(?:\s+on\b|\s+ref\b|\s+Avl\b|[.,]|\s*$)/i))) {
+  let u;
+  if ((u = s.match(/UPI\/(P2M|P2A|P2P|P2PA)\/(\w+)\/([^\n\r]+)/i))) {          // UPI account txn
+    upi_type = u[1].toUpperCase(); ref = u[2]; counterparty_raw = u[3].trim();
+    counterparty = counterparty_raw.replace(/\s{2,}/g, ' ').trim();
+  } else if ((m = flat.match(/on\s+(.+?)\s+(\d{2})-(\d{2})-(\d{4})\s+(\d{2}):(\d{2}):(\d{2})\s*IST/i))) { // card confirmation
+    counterparty = m[1].replace(/\s{2,}/g, ' ').trim(); counterparty_raw = counterparty;
+    ts = istToEpoch(+m[4], +m[3], +m[2], +m[5], +m[6], +m[7]);
+  } else if ((m = flat.match(/Auto ?Pay of INR\s*[\d,.]+\s*for\s+(.+?)\s+has been processed/i))) { // card autopay
     counterparty = m[1].trim(); counterparty_raw = counterparty;
+  } else if ((m = flat.match(/Info\s*[-:]\s*(NEFT|IMPS|RTGS)\/([A-Za-z0-9]+)\/([^.\s]+)/i))) { // NEFT/IMPS credit
+    channel = m[1].toUpperCase(); ref = m[2]; counterparty = m[3].trim(); counterparty_raw = m[0].replace(/^Info\s*[-:]\s*/i, '');
   }
 
-  let ts = null;
-  if ((m = s.match(/(\d{2})-(\d{2})-(\d{2,4})(?:[ ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/))) {
-    const yy = m[3].length === 2 ? 2000 + +m[3] : +m[3];
-    ts = istToEpoch(yy, +m[2], +m[1], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+  if (!ts) {   // "15-02-26, 16:45:30"  or  "04-08-26 at 19:04:22"
+    const d = s.match(/(\d{2})-(\d{2})-(\d{2,4})[, ]+(?:at\s+)?(\d{2}):(\d{2}):(\d{2})/);
+    if (d) { const yy = d[3].length === 2 ? 2000 + +d[3] : +d[3]; ts = istToEpoch(yy, +d[2], +d[1], +d[4], +d[5], +d[6]); }
   }
   return { amount, direction, channel, upi_type, counterparty, counterparty_raw, ref, ts };
 }
