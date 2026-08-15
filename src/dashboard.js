@@ -39,6 +39,11 @@ a{color:var(--blue);text-decoration:none}
 .brand .sub{color:var(--dim);font-size:12px;margin-top:2px}
 .chips{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .pill,.live{color:var(--dim);font-size:11.5px;border:1px solid var(--brd);border-radius:999px;padding:7px 13px;background:var(--glass);backdrop-filter:blur(12px)}
+.rbtn{color:var(--dim);font:inherit;font-size:11.5px;font-weight:600;border:1px solid var(--brd);border-radius:999px;padding:7px 13px;background:var(--glass);backdrop-filter:blur(12px);cursor:pointer;transition:all .14s}
+.rbtn:hover{color:var(--text);border-color:rgba(167,139,250,.55)}
+.rbtn:disabled{opacity:.65;cursor:default}
+.rbtn .sp{display:inline-block;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 .live{display:flex;align-items:center;gap:8px}.live .ld{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green);animation:pulse 1.7s infinite}
 .periods{display:flex;gap:9px;margin-bottom:20px;flex-wrap:wrap;align-items:center}
 .periods .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-right:2px}
@@ -246,7 +251,7 @@ export function renderDashboard(d) {
   const body = `<div class="wrap">
     <div class="head">
       <div class="brand"><div class="logo">💸</div><div><h1>Finance</h1><div class="sub">${esc(today)} · <span class="mono">${esc(plabel)}</span></div></div></div>
-      <div class="chips"><div class="live"><span class="ld"></span>live · <span id="clock" class="tnum">--:--:--</span></div><div class="pill">₹ · click to drill in</div></div>
+      <div class="chips"><div class="live"><span class="ld"></span>live · <span id="clock" class="tnum">--:--:--</span></div><button id="refresh" class="rbtn" title="Scan email + SMS right now">⟳ Refresh</button><div class="pill">₹ · click to drill in</div></div>
     </div>
 
     <div class="periods">${periodPills}</div>
@@ -355,6 +360,15 @@ const CLIENT_JS = String.raw`(function(){
   tick();setInterval(tick,1000);
   try{var sy=sessionStorage.getItem('fa_sy');if(sy){window.scrollTo(0,+sy);sessionStorage.removeItem('fa_sy');}}catch(e){}
   var SIG=(D&&D.sig)||'';
+  var rb=document.getElementById('refresh');
+  if(rb)rb.addEventListener('click',function(){
+    if(rb.disabled)return;rb.disabled=true;rb.innerHTML='<span class="sp">⟳</span> Scanning…';
+    fetch('/refresh',{method:'POST',cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(j){
+      if(j&&j.sig&&j.sig!==SIG){try{sessionStorage.setItem('fa_sy',String(window.scrollY));}catch(e){}location.reload();return;}
+      rb.textContent=(j&&j.inserted)?('+'+j.inserted+' new'):'✓ Up to date';
+      setTimeout(function(){rb.textContent='⟳ Refresh';rb.disabled=false;},1800);
+    }).catch(function(){rb.textContent='⟳ Refresh';rb.disabled=false;});
+  });
   setInterval(function(){if(document.hidden||ov.style.display==='flex')return;fetch('/pulse',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(j){if(j&&j.sig&&j.sig!==SIG){try{sessionStorage.setItem('fa_sy',String(window.scrollY));}catch(e){}location.reload();}}).catch(function(){});},1000);
 })();`;
 

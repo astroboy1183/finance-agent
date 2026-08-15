@@ -134,6 +134,17 @@ export default {
       return Response.json({ sig: await dataSignature(env.DB) }, { headers: { 'cache-control': 'no-store' } });
     }
 
+    // On-demand ingest: the dashboard "Refresh" button hits this for an instant
+    // email + SMS scan instead of waiting for the next per-minute cron.
+    if (path === '/refresh' && request.method === 'POST') {
+      if (getCookie(request, 'fa') !== (await cookieToken(env))) return new Response('forbidden', { status: 403 });
+      const r = await ingest(env, { days: 2 });
+      return Response.json(
+        { ok: true, inserted: r.inserted || 0, sig: await dataSignature(env.DB) },
+        { headers: { 'cache-control': 'no-store' } },
+      );
+    }
+
     // Dashboard + login
     if (path === '/' && request.method === 'POST') {
       const form = await request.formData();
@@ -159,14 +170,15 @@ export default {
     return new Response('not found', { status: 404 });
   },
 
-  // Single hourly cron does everything. Ingest every run; fire briefings during
-  // the 06:xx IST run, guarded so each sends once per period.
+  // Per-minute cron does everything. Ingest every run (so transactions surface
+  // within ~a minute); fire briefings once daily at 06:05 IST, guarded so each
+  // sends once per period.
   async scheduled(event, env) {
     await ingest(env, { days: 2 });
 
     const now = nowEpoch();
-    const istHour = new Date((now + (5 * 60 + 30) * 60) * 1000).getUTCHours();
-    if (istHour !== 6) return;
+    const ist = new Date((now + (5 * 60 + 30) * 60) * 1000);
+    if (ist.getUTCHours() !== 6 || ist.getUTCMinutes() !== 5) return; // briefings run once daily at 06:05 IST
 
     const day = istDay(now);                 // YYYY-MM-DD (IST)
     const [Y, M, D] = day.split('-').map(Number);
