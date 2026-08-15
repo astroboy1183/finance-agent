@@ -94,11 +94,12 @@ export default {
     // Bank SMS forwarded from the phone (key-gated). Accepts JSON or form.
     if (path === '/sms' && request.method === 'POST') {
       if (url.searchParams.get('key') !== env.SMS_KEY) return new Response('forbidden', { status: 403 });
+      // Accept JSON, form-encoded, or a raw message body — whatever the forwarder sends.
+      const raw = await request.text();
       let p = {};
-      const ct = request.headers.get('content-type') || '';
-      if (ct.includes('json')) p = await request.json().catch(() => ({}));
-      else { const f = await request.formData().catch(() => null); if (f) for (const [k, v] of f) p[k] = v; }
-      const text = p.text || p.message || p.body || p.msg || p.sms || '';
+      try { p = JSON.parse(raw); } catch { try { for (const [k, v] of new URLSearchParams(raw)) p[k] = v; } catch {} }
+      let text = p.text || p.message || p.body || p.msg || p.sms || '';
+      if (!text && raw && raw[0] !== '{' && raw.indexOf('=') === -1) text = raw;   // raw-body fallback
       const sender = p.from || p.sender || p.address || p.originator || p.number || '';
       let ts = Number(p.sentStamp || p.timestamp || p.time || p.ts || 0);
       ts = ts > 1e12 ? Math.floor(ts / 1000) : (ts || Math.floor(Date.now() / 1000));
