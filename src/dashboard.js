@@ -235,7 +235,8 @@ export function renderDashboard(d) {
       : bl.status === 'overdue' ? `${-bl.daysUntil}d late`
       : bl.status === 'due-soon' ? (bl.daysUntil === 0 ? 'today' : `in ${bl.daysUntil}d`)
       : `${bl.due_day}${ord(bl.due_day)}`;
-    return `<div class="row" data-drill="merch:${esc(bl.name)}"><span class="who"><span class="dot" style="background:${col};color:${col}"></span>${esc(bl.name)} <span class="tag">${bl.amount ? inr(bl.amount) : ''} · ${lbl}</span></span><span class="amt" style="color:${col}">${right}</span></div>`;
+    const autoTag = bl.kind === 'subscription' ? ' <span class="tag" style="opacity:.65">⟳ auto</span>' : '';
+    return `<div class="row" data-drill="merch:${esc(bl.name)}"><span class="who"><span class="dot" style="background:${col};color:${col}"></span>${esc(bl.name)}${autoTag} <span class="tag">${bl.amount ? inr(bl.amount) : ''} · ${lbl}</span></span><span class="amt" style="color:${col}">${right}</span></div>`;
   }).join('') || '<div class="tag">no bills tracked yet — add one in chat: <b>add bill rent 16000 due 9</b></div>';
 
   const ins = [];

@@ -3,6 +3,7 @@
 import { ingest } from './ingest.js';
 import { handleSms } from './sms.js';
 import { checkBills, billsStatus } from './bills.js';
+import { syncRecurringBills } from './recurring.js';
 import { recentRawSms } from './ledger.js';
 import { morningReport, weeklyReport, monthlyReport } from './reports.js';
 import { handleSlackEvent } from './chat.js';
@@ -121,6 +122,10 @@ export default {
       const skipChecks = url.searchParams.get('nochecks') === '1';
       return Response.json(await ingest(env, { days, after, before, skipChecks }));
     }
+    // Re-learn recurring bills/subscriptions from the ledger (Claude-judged).
+    if (path === '/bills/sync' && url.searchParams.get('key') === env.INGEST_KEY) {
+      return Response.json(await syncRecurringBills(env));
+    }
     if (path === '/report' && url.searchParams.get('key') === env.INGEST_KEY) {
       const t = url.searchParams.get('type');
       const fn = { morning: morningReport, weekly: weeklyReport, monthly: monthlyReport }[t] || morningReport;
@@ -189,6 +194,10 @@ export default {
     if (await alertOnce(env.DB, `rep-morning:${day}`)) await morningReport(env);
     if (D === 1 && await alertOnce(env.DB, `rep-monthly:${mLabel}`)) await monthlyReport(env);
     if (dow === 0 && await alertOnce(env.DB, `rep-weekly:${day}`)) await weeklyReport(env);
+    // Weekly: re-learn recurring bills from the ledger so the list self-maintains.
+    if (dow === 0 && await alertOnce(env.DB, `bills-sync:${day}`)) {
+      try { await syncRecurringBills(env); } catch (e) { console.log('recurring', String(e)); }
+    }
   },
 };
 

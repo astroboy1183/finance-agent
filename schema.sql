@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS bills ( -- recurring bills to remind about (paid = ma
   amount     REAL,               -- typical amount
   due_day    INTEGER,            -- day of month it's due (1-31)
   category   TEXT,
+  kind       TEXT DEFAULT 'bill', -- 'bill' = you actively pay (recharge/utility); 'subscription' = auto-debits
   active     INTEGER DEFAULT 1,
   created_at INTEGER
 );

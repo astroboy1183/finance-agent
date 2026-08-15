@@ -129,12 +129,13 @@ export async function listBills(db) {
   const r = await db.prepare('SELECT * FROM bills WHERE active=1 ORDER BY due_day').all();
   return r.results || [];
 }
-export async function upsertBill(db, { id, name, match_str, amount, due_day, category }) {
+export async function upsertBill(db, { id, name, match_str, amount, due_day, category, kind }) {
   await db.prepare(
-    `INSERT INTO bills(id,name,match_str,amount,due_day,category,active,created_at) VALUES(?,?,?,?,?,?,1,?)
+    `INSERT INTO bills(id,name,match_str,amount,due_day,category,kind,active,created_at) VALUES(?,?,?,?,?,?,?,1,?)
      ON CONFLICT(id) DO UPDATE SET name=excluded.name, match_str=COALESCE(excluded.match_str,bills.match_str),
-       amount=excluded.amount, due_day=excluded.due_day, category=COALESCE(excluded.category,bills.category), active=1`,
-  ).bind(id, name, match_str || null, amount ?? null, due_day ?? null, category || null, now()).run();
+       amount=excluded.amount, due_day=excluded.due_day, category=COALESCE(excluded.category,bills.category),
+       kind=COALESCE(excluded.kind,bills.kind), active=1`,
+  ).bind(id, name, match_str || null, amount ?? null, due_day ?? null, category || null, kind || null, now()).run();
 }
 export async function deactivateBill(db, id) {
   const r = await db.prepare('UPDATE bills SET active=0 WHERE id=?').bind(id).run();
@@ -146,7 +147,9 @@ export async function billPaidBetween(db, bill, from, to) {
   let sql = `SELECT day_ist, amount FROM transactions WHERE ts>=? AND ts<? AND direction='debit' AND currency='INR'`;
   const b = [from, to];
   if (bill.match_str) { sql += ' AND LOWER(counterparty) LIKE ?'; b.push(`%${bill.match_str.toLowerCase()}%`); }
-  if (bill.amount) { sql += ' AND amount>=? AND amount<=?'; b.push(bill.amount * 0.5, bill.amount * 1.6); }
+  // The merchant match is the primary signal; amount is only a loose sanity guard
+  // (recharge/plan amounts change month to month, so accept 0.4x–4x the expected).
+  if (bill.amount) { sql += ' AND amount>=? AND amount<=?'; b.push(bill.amount * 0.4, bill.amount * 4); }
   sql += ' ORDER BY ts DESC LIMIT 1';
   return await db.prepare(sql).bind(...b).first();
 }
