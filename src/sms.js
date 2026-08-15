@@ -12,7 +12,7 @@ async function hashId(s) {
   return 'sms-' + [...new Uint8Array(b)].slice(0, 10).map((x) => x.toString(16).padStart(2, '0')).join('');
 }
 
-export async function handleSms(env, { sender, text, ts }) {
+export async function handleSms(env, { sender, text, ts, skipChecks = false }) {
   const db = env.DB;
   const nowE = Math.floor(Date.now() / 1000);
   const id = await hashId(`${sender}|${text}`);
@@ -34,7 +34,7 @@ export async function handleSms(env, { sender, text, ts }) {
       row.category = categorize(row, overrides);
       const res = await insertTxns(db, [row]);
       inserted = res.inserted;
-      if (res.rows.length) { try { await runChecks(env, res.rows); } catch (e) { console.log('sms checks', String(e)); } }
+      if (res.rows.length && !skipChecks) { try { await runChecks(env, res.rows); } catch (e) { console.log('sms checks', String(e)); } }
     }
   }
 

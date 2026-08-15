@@ -109,7 +109,8 @@ export default {
           .bind('sms-empty-' + ts + '-' + (raw.length), ts, sender || '', raw.slice(0, 400), 'no-text').run();
         return Response.json({ ok: false, error: 'no text field', received: raw.slice(0, 200) });
       }
-      return Response.json({ ok: true, ...(await handleSms(env, { sender, text, ts })) });
+      const skipChecks = url.searchParams.get('nochecks') === '1';
+      return Response.json({ ok: true, ...(await handleSms(env, { sender, text, ts, skipChecks })) });
     }
     // Inspect recently forwarded SMS (to tune the parser)
     if (path === '/sms/raw' && url.searchParams.get('key') === env.INGEST_KEY) {
